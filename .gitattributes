@@ -1,0 +1,2 @@
+*.csv !text !filter !merge !diff
+*.db3 !text !filter !merge !diff
