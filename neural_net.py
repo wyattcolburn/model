@@ -40,10 +40,10 @@ def train_and_save_model(input_bag, model_path='robot_model.keras'):
         model_path (str): Path to save the trained model
     """
     # Load data
-    training_lidar = pd.read_csv(f"{input_bag}/_data/lidar_data.csv")
-    training_odom = pd.read_csv(f"{input_bag}/_data/odom_data.csv")
-    training_local_goals = pd.read_csv(f"{input_bag}/_data/local_goals.csv")
-    training_labels = pd.read_csv(f"{input_bag}/_data/cmd_vel_output.csv")
+    training_lidar = pd.read_csv(f"{input_bag}/input_data/lidar_data.csv")
+    training_odom = pd.read_csv(f"{input_bag}/input_data/odom_data.csv")
+    training_local_goals = pd.read_csv(f"{input_bag}/input_data/local_goals.csv")
+    training_labels = pd.read_csv(f"{input_bag}/_data/input_cmd_vel_output.csv")
    
     # Preprocess data
     training_lidar = training_lidar.iloc[:,1:]
@@ -144,16 +144,23 @@ def main():
     
     if args.train:
         # Train and save the model
+        if os.path.exists(f"{args.input_bag}/input_data"):
+            print("training data already exists")
+        else: 
+            training_complete.createFeatures(args.input_bag)
         train_and_save_model(args.input_bag)
     
     if args.predict:
         # Example of loading data for prediction
         # You'll need to prepare your input data similarly to training data
-        training_complete.createFeatures(args.input_bag)
+        if os.path.exists(f"{args.input_bag}/input_data"):
+            print("training data already exists")
+        else: 
+            training_complete.createFeatures(args.input_bag)
         
-        training_lidar = pd.read_csv(f"{args.input_bag}_data/lidar_data.csv")
-        training_odom = pd.read_csv(f"{args.input_bag}_data/odom_data.csv")
-        training_local_goals = pd.read_csv(f"{args.input_bag}_data/local_goals.csv")
+        training_lidar = pd.read_csv(f"{args.input_bag}/input_data/lidar_data.csv")
+        training_odom = pd.read_csv(f"{args.input_bag}/input_data/odom_data.csv")
+        training_local_goals = pd.read_csv(f"{args.input_bag}/input_data/local_goals.csv")
         
         # Preprocess data (similar to training preprocessing)
         training_lidar = training_lidar.iloc[:,1:]
@@ -167,6 +174,11 @@ def main():
         # Make predictions
         predictions = load_model_and_predict(features)
         print("Predictions:", predictions)
+        output_dir = os.path.join(args.input_bag, "output_data")
+        os.makedirs(output_dir, exist_ok = True)
+
+        np.savetxt(os.path.join(output_dir, "cmd_vel.csv"), predictions, delimiter=",")
+        print("written output cmd values")
 
 if __name__ == "__main__":
     main()

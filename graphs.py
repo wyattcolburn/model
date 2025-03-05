@@ -1,14 +1,29 @@
 import os
 import matplotlib.pyplot as plt
 import pandas as pd
-
-frame_dkr_input = "basic_test_output"
-frame_dkr_output = "basic_test_feb28"
-
-csv_file_input = os.path.join(frame_dkr_input,"test3_odom_data.csv")
-csv_file_output = os.path.join(frame_dkr_output, "odom_data.csv")
+import argparse
+import ros_csv
+parser = argparse.ArgumentParser(description="Robot Model Training and Inference Graphs utils")
+parser.add_argument("input_bag", type=str, help="Path to input data bag")
 
 
+args = parser.parse_args()
+if os.path.exists(args.input_bag):
+    print("input bag exists")
+else:
+    raise ValueError("No bag")
+
+
+
+csv_file_input = os.path.join(args.input_bag,"input_data/odom_data.csv")
+output_dkr = os.path.join(args.input_bag, "output_bag")
+
+if os.path.exists(output_dkr)
+    continue
+else:
+    ros_csv.save_to_csv(output_dkr, os.path.join(args.input_bag, "output_data/odom_data.csv")
+
+csv_file_output = os.path.join(args.input_bag, "output_data/odom_data.csv")
 input = pd.read_csv(csv_file_input)
 output = pd.read_csv(csv_file_output)
 
