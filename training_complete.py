@@ -497,7 +497,7 @@ def createFeatures(input_bag):
     """This function creates all the features which are feeded into inference to a Neural Net"""
 
     #Create the files
-    frame_dkr = input_bag + "_data"
+    frame_dkr = os.path.join(input_bag, "input_data")
     os.makedirs(frame_dkr, exist_ok=True)
     odom_csv_file = os.path.join(frame_dkr, "odom_data.csv")
     cmd_csv = os.path.join(frame_dkr, "cmd_vel.csv")
