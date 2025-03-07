@@ -8,7 +8,7 @@ from sklearn.preprocessing import MinMaxScaler
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
-
+import glob
 import training_complete
 def create_model(input_shape):
     """
@@ -43,7 +43,7 @@ def train_and_save_model(input_bag, model_path='robot_model.keras'):
     training_lidar = pd.read_csv(f"{input_bag}/input_data/lidar_data.csv")
     training_odom = pd.read_csv(f"{input_bag}/input_data/odom_data.csv")
     training_local_goals = pd.read_csv(f"{input_bag}/input_data/local_goals.csv")
-    training_labels = pd.read_csv(f"{input_bag}/_data/input_cmd_vel_output.csv")
+    training_labels = pd.read_csv(f"{input_bag}/input_data/cmd_vel_output.csv")
    
     # Preprocess data
     training_lidar = training_lidar.iloc[:,1:]
@@ -63,12 +63,12 @@ def train_and_save_model(input_bag, model_path='robot_model.keras'):
     scaler = MinMaxScaler()
     X_train_scaled = scaler.fit_transform(X_train)
     X_val_scaled = scaler.transform(X_val)
-    
+    epochsVal = 500
     # Create and train model
     model = create_model(X_train_scaled.shape[1])
     history = model.fit(
         X_train_scaled, y_train, 
-        epochs=50, 
+        epochs=epochsVal, 
         batch_size=32, 
         validation_data=(X_val_scaled, y_val)
     )
@@ -96,13 +96,126 @@ def train_and_save_model(input_bag, model_path='robot_model.keras'):
     plt.ylabel('Mean Absolute Error')
     plt.legend()
     
-    plt.savefig(f"{input_bag}/_data/MAE.png")
+    plt.savefig(f"{input_bag}/_data/MAE_{epochsVal}.png")
+    plt.tight_layout()
+    plt.show()
+   
+    # Save the scaler to use for inference
+    np.save('scaler_min.npy', scaler.min_)
+    np.save('scaler_scale_.npy', scaler.scale_)
+    
+    # Save the combined data
+    return scaler
+def combined_training_data(input_directory, model_path='robot_model.keras'):
+    """
+    Want to combined training data from multiple directories within training directory
+
+    Args:
+        input_directory (list) of the directories that have a bag
+
+    Returns:
+        combined_features, combined_labels,
+
+    Saves:
+        Also saves this data in combined_features dkr
+    """
+
+    
+    combined_features = None
+    combined_labels = None
+    for data_dir in input_directory:
+        if os.path.exists(f"{data_dir}/input_data"): # values already been calculated
+            print(f"value already exist in {data_dir}")
+        else:
+            training_complete.createFeatures(data_dir)
+            print(f"adding training data {data_dir}")
+
+        training_lidar = pd.read_csv(f"{data_dir}/input_data/lidar_data.csv")
+        training_odom = pd.read_csv(f"{data_dir}/input_data/odom_data.csv")
+        training_local_goals = pd.read_csv(f"{data_dir}/input_data/local_goals.csv")
+        training_labels = pd.read_csv(f"{data_dir}/input_data/cmd_vel_output.csv")
+   
+        # Preprocess data
+        training_lidar = training_lidar.iloc[:,1:]
+        training_odom = training_odom.iloc[:, [1,2,4,5]]
+        training_labels = training_labels.iloc[:, [1,2]]
+        training_odom = training_odom.iloc[:-1,:]
+        training_labels = training_labels.iloc[:-1, :]
+        training_local_goals = training_local_goals.iloc[:-1, :]
+        
+        # Combine features
+        features = pd.concat([training_odom, training_lidar, training_local_goals], axis=1)
+        feature_columns = [f'feature_{i}' for i in range(features.shape[1])]
+        features.columns = feature_columns
+        print(f"feautres shape of {data_dir} : {features.shape}")     
+    
+
+        # Add to combined dataframes
+        if combined_features is None:
+            combined_features = features
+            combined_labels = training_labels
+        else:
+            # Append rows
+            combined_features = pd.concat([combined_features, features], axis=0, ignore_index=True)
+            combined_labels = pd.concat([combined_labels, training_labels], axis=0, ignore_index=True)
+    # Split the data into training and validation
+     
+    X_train, X_val, y_train, y_val = train_test_split(combined_features, combined_labels, test_size=0.2, random_state=42)
+    #Data all collected now we have to scale it
+    scaler = MinMaxScaler()
+    
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_val_scaled = scaler.transform(X_val)
+    np.save('scaler_min.npy', scaler.min_)
+    np.save('scaler_scale_.npy', scaler.scale_)
+    combined_dir = "combined_dir"
+    os.makedirs(combined_dir, exist_ok=True)
+    combined_features.to_csv(f"{combined_dir}/combined_features.csv", index=False)
+    combined_labels.to_csv(f"{combined_dir}/combined_labels.csv", index=False)
+    print(f"Saved combined dataset to {combined_dir}")
+    
+
+    epochsVal = 500
+    print(f" combined features shape {combined_features.shape}")
+    # Create and train model
+    model = create_model(X_train_scaled.shape[1])
+    history = model.fit(
+        X_train_scaled, y_train, 
+        epochs=epochsVal, 
+        batch_size=32, 
+        validation_data=(X_val_scaled, y_val)
+    )
+    
+    # Save the model and scaler
+    model.save(model_path)
+    
+    # Optional: Save scaler for inference
+    
+    # Plot training history
+    plt.figure(figsize=(12,4))
+    plt.subplot(1,2,1)
+    plt.plot(history.history['loss'], label='Training loss')
+    plt.plot(history.history['val_loss'], label='Validation loss')
+    plt.title('Training and Validation Loss')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    plt.legend()
+    
+    plt.subplot(1,2,2)
+    plt.plot(history.history['mae'], label='Training MAE')
+    plt.plot(history.history['val_mae'], label='Validation MAE')
+    plt.title('Training and Validation MAE')
+    plt.xlabel('Epochs')
+    plt.ylabel('Mean Absolute Error')
+    plt.legend()
+    
+    plt.savefig(f"{data_dir}/MAE_{epochsVal}.png")
     plt.tight_layout()
     plt.show()
     
-    np.save('scaler_min.npy', scaler.min_)
-    np.save('scaler_scale_.npy', scaler.scale_)
-    return scaler
+    return combined_features, combined_labels
+
+        # Now we have the data
 
 def load_model_and_predict(input_data, model_path='robot_model.keras', scaler_path='feature_scaler.joblib'):
     """
@@ -134,29 +247,47 @@ def load_model_and_predict(input_data, model_path='robot_model.keras', scaler_pa
     print(f"shape of predictions {predictions.shape}") 
     return predictions
 
+def input_directory_source():
+
+    """ Want to return a list of directories which are within the training folder
+    which are ros bags"""
+
+    os.makedirs("training", exist_ok = True)
+
+    dirs = [d for d in glob.glob(f"training_temp2/*/") if os.path.isdir(d)] 
+
+    print(dirs)
+
+    return dirs
 def main():
     parser = argparse.ArgumentParser(description="Robot Model Training and Inference")
     parser.add_argument("input_bag", type=str, help="Path to input data bag")
     parser.add_argument("--train", action="store_true", help="Train the model")
     parser.add_argument("--predict", action="store_true", help="Run inference")
-    
+    parser.add_argument("--add", action="store_true", help="Add to training dataset") 
     args = parser.parse_args()
     
+
+    
+    if args.add:
+        dir = input_directory_source()
+        combined_training_data(dir, "robot_model_adv.keras")
+
     if args.train:
         # Train and save the model
-        if os.path.exists(f"{args.input_bag}/input_data"):
-            print("training data already exists")
-        else: 
-            training_complete.createFeatures(args.input_bag)
+        #if os.path.exists(f"{args.input_bag}/input_data"):
+        #    print("training data already exists")
+        #else: 
+        training_complete.createFeatures(args.input_bag)
         train_and_save_model(args.input_bag)
     
     if args.predict:
         # Example of loading data for prediction
         # You'll need to prepare your input data similarly to training data
-        if os.path.exists(f"{args.input_bag}/input_data"):
-            print("training data already exists")
-        else: 
-            training_complete.createFeatures(args.input_bag)
+        #if os.path.exists(f"{args.input_bag}/input_data"):
+       #     print("training data already exists")
+        #else: 
+        training_complete.createFeatures(args.input_bag)
         
         training_lidar = pd.read_csv(f"{args.input_bag}/input_data/lidar_data.csv")
         training_odom = pd.read_csv(f"{args.input_bag}/input_data/odom_data.csv")
