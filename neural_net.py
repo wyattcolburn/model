@@ -10,6 +10,8 @@ from tensorflow import keras
 from tensorflow.keras import layers
 import glob
 import training_complete
+from keras.callbacks import EarlyStopping
+from keras.optimizers import Adam
 def create_model(input_shape):
     """
     Create the neural network model architecture
@@ -28,7 +30,16 @@ def create_model(input_shape):
         layers.Dense(2)  # Output layer with 2 neurons
     ])
     
-    model.compile(optimizer='adam', loss='mse', metrics=['mae'])
+    lr_schedule = keras.optimizers.schedules.ExponentialDecay(
+    initial_learning_rate=1e-3,
+    decay_steps=10000,
+    decay_rate=0.9)
+
+    ourAdam = keras.optimizers.Adam(
+    learning_rate=lr_schedule,
+    name="adam")
+    print("*****************************OUR ADAM WITH SCHEDULING")
+    model.compile(optimizer=ourAdam, loss='mse', metrics=['mae'])
     return model
 
 def train_and_save_model(input_bag, model_path='robot_model.keras'):
@@ -64,12 +75,16 @@ def train_and_save_model(input_bag, model_path='robot_model.keras'):
     X_train_scaled = scaler.fit_transform(X_train)
     X_val_scaled = scaler.transform(X_val)
     epochsVal = 500
+
+    # early stopping
+    early_stopping = EarlyStopping(monitor='val_accuracy', patience=5, min_delta=0.001, restore_best_weights=True)
     # Create and train model
     model = create_model(X_train_scaled.shape[1])
     history = model.fit(
         X_train_scaled, y_train, 
         epochs=epochsVal, 
         batch_size=32, 
+        callbacks=[callback],
         validation_data=(X_val_scaled, y_val)
     )
     
@@ -106,6 +121,9 @@ def train_and_save_model(input_bag, model_path='robot_model.keras'):
     
     # Save the combined data
     return scaler
+
+
+
 def combined_training_data(input_directory, model_path='robot_model.keras'):
     """
     Want to combined training data from multiple directories within training directory
@@ -174,17 +192,22 @@ def combined_training_data(input_directory, model_path='robot_model.keras'):
     combined_labels.to_csv(f"{combined_dir}/combined_labels.csv", index=False)
     print(f"Saved combined dataset to {combined_dir}")
     
-
-    epochsVal = 500
     print(f" combined features shape {combined_features.shape}")
+    epochsVal = 1000
+    # early stopping
+    early_stopping = EarlyStopping(monitor='val_accuracy', mode='min', patience=5, restore_best_weights=True)
+    #learning rate schedule
+    
     # Create and train model
     model = create_model(X_train_scaled.shape[1])
     history = model.fit(
         X_train_scaled, y_train, 
         epochs=epochsVal, 
-        batch_size=32, 
+        batch_size=64, 
+        callbacks=[early_stopping],
         validation_data=(X_val_scaled, y_val)
     )
+
     
     # Save the model and scaler
     model.save(model_path)
@@ -217,7 +240,7 @@ def combined_training_data(input_directory, model_path='robot_model.keras'):
 
         # Now we have the data
 
-def load_model_and_predict(input_data, model_path='robot_model.keras', scaler_path='feature_scaler.joblib'):
+def load_model_and_predict(input_data, model_path='robot_model_adv.keras', scaler_path='feature_scaler.joblib'):
     """
     Load trained model and make predictions
     
@@ -246,6 +269,7 @@ def load_model_and_predict(input_data, model_path='robot_model.keras', scaler_pa
     predictions = model.predict(input_scaled)
     print(f"shape of predictions {predictions.shape}") 
     return predictions
+     
 
 def input_directory_source():
 
