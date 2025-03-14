@@ -2,13 +2,14 @@
 training_temp
 training_temp2
 
-mar_12_test1
-march12_test1
-march12_test1_2
-march7_test1
-march7_test2
-model
-test1
-test1_data
-test2
-training
+mar_12_test1/
+march12_test1/
+march12_test1_2/
+march7_test1/
+march7_test2/
+model/
+test1/
+test1_data/
+test2/
+training/
+combined_dir/
