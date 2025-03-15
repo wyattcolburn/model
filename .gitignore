@@ -1,6 +1,6 @@
 # Ignore all dkr
-training_temp
-training_temp2
+training_temp/
+training_temp2/
 
 mar_12_test1/
 march12_test1/
