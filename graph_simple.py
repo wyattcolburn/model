@@ -2,9 +2,11 @@ import os
 import matplotlib.pyplot as plt
 import pandas as pd
 
-frame_dkr_input = "test1/input_data"
+frame_dkr_input = "test1/output_bag"
 
 csv_file_input = os.path.join(frame_dkr_input,"odom_data.csv")
+
+#output, and i want overlay the hallucinated objects
 csv_file_output = "march12_test1_2.csv"
 
 input = pd.read_csv(csv_file_input)

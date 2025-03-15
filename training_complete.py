@@ -11,9 +11,9 @@ import math
 import csv
 from matplotlib.patches import Circle
 
-input_bag = "/home/wyattcolburn/ros_ws/utils/basic_test_carlos_output"
+input_bag = "/home/wyattcolburn/model/test1/input_data/"
 
-frame_dkr = "basic_test_feb28"
+frame_dkr = "test1_obstacles"
 os.makedirs(frame_dkr, exist_ok=True)
 odom_csv_file = os.path.join(frame_dkr, "odom_data.csv")
 cmd_csv = os.path.join(frame_dkr, "cmd_vel.csv")
@@ -497,7 +497,7 @@ def createFeatures(input_bag):
     """This function creates all the features which are feeded into inference to a Neural Net"""
 
     #Create the files
-    frame_dkr = os.path.join(input_bag, "input_data")
+    frame_dkr = os.path.join(input_bag)
     os.makedirs(frame_dkr, exist_ok=True)
     odom_csv_file = os.path.join(frame_dkr, "odom_data.csv")
     cmd_csv = os.path.join(frame_dkr, "cmd_vel.csv")
@@ -505,13 +505,14 @@ def createFeatures(input_bag):
     training_output = os.path.join(frame_dkr, "big_csv.csv")
     local_goals_output = os.path.join(frame_dkr, "local_goals.csv")
     path_output = os.path.join(frame_dkr, "odom_path")
+    obstacles_output = os.path.join(frame_dkr, "obactles.csv")
 
     cmd_output_csv = os.path.join(frame_dkr, "cmd_vel_output.csv")
     
     print("have created the files")
-    save_to_csv(input_bag, odom_csv_file, '/odom') # turned bag into csv
+    #save_to_csv(input_bag, odom_csv_file, '/odom') # turned bag into csv
     
-    save_to_csv(input_bag, cmd_csv, '/cmd_vel') # turned bag into csv
+    #save_to_csv(input_bag, cmd_csv, '/cmd_vel') # turned bag into csv
     
     
     df = pd.read_csv(odom_csv_file)
@@ -530,16 +531,24 @@ def createFeatures(input_bag):
        obstacleOne, obstacleTwo = perp_circle_array((local_goals_x[i], local_goals_y[i]), (local_goals_x[i + 1], local_goals_y[i + 1]), obstacle_radius, obstacle_offset, odom_x, odom_y)
        obstacleArray.append(obstacleOne)
        obstacleArray.append(obstacleTwo)
-    lidar_readings = ray_trace_optimized(obstacleArray, odom_x, odom_y, local_goals_x) 
-    hall_csv(lidar_readings, lidar_file)
 
-    oversample_cmdVel3(odom_csv_file, cmd_csv, cmd_output_csv)
+    with open(obstacles_output, mode="w", newline="") as file:
+        writer = csv.writer(file)
+        writer.writerow(['cx','cy'])
+        for obstacle in obstacleArray:
+            writer.writerow([obstacle.centerPoint[0], obstacle.centerPoint[1]])
+    print("saved")
+
+    #lidar_readings = ray_trace_optimized(obstacleArray, odom_x, odom_y, local_goals_x) 
+    #hall_csv(lidar_readings, lidar_file)
+
+    #oversample_cmdVel3(odom_csv_file, cmd_csv, cmd_output_csv)
     #generate_frames_obst(odom_x, odom_y, local_goals_x, local_goals_y, obstacleArray, lidar_readings, frame_dkr) 
 
 
 
 
 def main():
-    createFeatures()
+    createFeatures(input_bag)
 if __name__ == "__main__":
     main()

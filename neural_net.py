@@ -41,7 +41,14 @@ def create_model(input_shape):
     print("*****************************OUR ADAM WITH SCHEDULING")
     model.compile(optimizer=ourAdam, loss='mse', metrics=['mae'])
     return model
+def modulation(w1, w2, p):
 
+    """
+    Requires odom data, and obstacle data, then with current_v, current_w need to create
+    a safety function for modulation
+
+    """
+    pass
 def train_and_save_model(input_bag, model_path='robot_model.keras'):
     """
     Train the model and save it to a file
@@ -289,13 +296,14 @@ def main():
     parser.add_argument("--train", action="store_true", help="Train the model")
     parser.add_argument("--predict", action="store_true", help="Run inference")
     parser.add_argument("--add", action="store_true", help="Add to training dataset") 
+    parser.add_argument("model",type=str, help="Which model do you want to run")
     args = parser.parse_args()
     
 
     
     if args.add:
         dir = input_directory_source()
-        combined_training_data(dir, "robot_model_adv.keras")
+        combined_training_data(dir, args.model)
 
     if args.train:
         # Train and save the model
@@ -303,7 +311,7 @@ def main():
         #    print("training data already exists")
         #else: 
         training_complete.createFeatures(args.input_bag)
-        train_and_save_model(args.input_bag)
+        train_and_save_model(args.input_bag, args.model)
     
     if args.predict:
         # Example of loading data for prediction
