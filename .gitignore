@@ -13,4 +13,4 @@ test1_data/
 test2/
 training/
 combined_dir/
-map_frame_training/
+map_frame_training/**/*.csv
