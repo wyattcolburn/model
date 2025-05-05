@@ -2,20 +2,16 @@ import os
 import matplotlib.pyplot as plt
 import pandas as pd
 
-frame_dkr_input = "test1/output_bag"
-
-csv_file_input = os.path.join(frame_dkr_input,"odom_data.csv")
-
 #output, and i want overlay the hallucinated objects
-csv_file_output = "march12_test1_2.csv"
-
+csv_file_input= "rosbag2_2025_04_29-15_46_09/input_data/odom_data.csv"
+csv_file_output = "rosbag2_2025_04_29-15_46_09/input_data/local_goals.csv"
 input = pd.read_csv(csv_file_input)
 output = pd.read_csv(csv_file_output)
 
 odom_x_input = input['odom_x'].tolist()
 odom_y_input = input['odom_y'].tolist()
-odom_x_output= output['odom_x'].tolist()
-odom_y_output = output['odom_y'].tolist()
+odom_x_output= output['local_goals_x'].tolist()
+odom_y_output = output['local_goals_y'].tolist()
 
 plt.figure(figsize=(8, 6))
 

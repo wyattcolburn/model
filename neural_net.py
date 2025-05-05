@@ -12,6 +12,38 @@ import glob
 import training_complete
 from keras.callbacks import EarlyStopping
 from keras.optimizers import Adam
+
+def create_model_simple(input_shape):
+    """
+    Create the neural network model architecture with regularization
+
+    Args:
+        input_shape (int): Number of input features
+
+    Returns:
+        keras.Sequential: Compiled model
+    """
+    model = keras.Sequential([
+        layers.Input(shape=(input_shape,)),
+        layers.BatchNormalization(),  # Normalize the inputs
+        layers.Dense(128, activation='relu', kernel_regularizer=keras.regularizers.l2(0.001)),
+        layers.Dropout(0.3),  # Add dropout to prevent overfitting
+        layers.Dense(64, activation='relu', kernel_regularizer=keras.regularizers.l2(0.001)),
+        layers.Dropout(0.3),
+        layers.Dense(32, activation='relu', kernel_regularizer=keras.regularizers.l2(0.001)),
+        layers.Dense(2)  # Output layer with 2 neurons
+    ])
+
+    # Actually use the learning rate schedule
+    lr_schedule = keras.optimizers.schedules.ExponentialDecay(
+        initial_learning_rate=1e-3,
+        decay_steps=10000,
+        decay_rate=0.9)
+
+    optimizer = keras.optimizers.Adam(learning_rate=lr_schedule)
+    model.compile(optimizer=optimizer, loss='mse', metrics=['mae'])
+
+    return model
 def create_model(input_shape):
     """
     Create the neural network model architecture
@@ -58,21 +90,21 @@ def train_and_save_model(input_bag, model_path='robot_model.keras'):
         model_path (str): Path to save the trained model
     """
     # Load data
-    training_lidar = pd.read_csv(f"{input_bag}/input_data/lidar_data.csv")
-    training_odom = pd.read_csv(f"{input_bag}/input_data/odom_data.csv")
-    training_local_goals = pd.read_csv(f"{input_bag}/input_data/local_goals.csv")
-    training_labels = pd.read_csv(f"{input_bag}/input_data/cmd_vel_output.csv")
+    training_lidar = pd.read_csv(f"{input_bag}/input_data/lidar_data.csv") # no heaer (map frame)
+    training_odom = pd.read_csv(f"{input_bag}/input_data/odom_data.csv", header=1) # odom_curren_v, odom_current_w (odom frame)
+    training_local_goals = pd.read_csv(f"{input_bag}/input_data/local_goals.csv", header=1) # local_goal_x, local_goal_y, local_goal_yaw (map frame)
+    training_labels = pd.read_csv(f"{input_bag}/input_data/cmd_vel_output.csv",header=1)
    
     # Preprocess data
     training_lidar = training_lidar.iloc[:,1:]
-    training_odom = training_odom.iloc[:, [1,2,4,5]]
+    training_odom = training_odom.iloc[:, [4,5]]
     training_labels = training_labels.iloc[:, [1,2]]
-    training_odom = training_odom.iloc[:-1,:]
-    training_labels = training_labels.iloc[:-1, :]
-    training_local_goals = training_local_goals.iloc[:-1, :]
+    training_local_goals = training_local_goals.iloc[:, :]
+
+    print(f"shape of lidar, odom, labels, local_goals {training_lidar.shape} {training_odom.shape} {training_labels.shape} {training_local_goals.shape}")
     
     # Combine features
-    features = pd.concat([training_odom, training_lidar, training_local_goals], axis=1)
+    features = pd.concat([training_odom, training_local_goals, training_lidar], axis=1)
     
     # Split data
     X_train, X_val, y_train, y_val = train_test_split(features, training_labels, test_size=0.2, random_state=42)
@@ -84,14 +116,20 @@ def train_and_save_model(input_bag, model_path='robot_model.keras'):
     epochsVal = 500
 
     # early stopping
-    early_stopping = EarlyStopping(monitor='val_accuracy', patience=5, min_delta=0.001, restore_best_weights=True)
+    early_stopping = EarlyStopping(
+    monitor='val_loss',     # Change to a metric that exists in your model
+    mode='min',           # Lower MAE is better, so use 'min'
+    patience=5,
+    min_delta=0.001,
+    restore_best_weights=True
+)
     # Create and train model
     model = create_model(X_train_scaled.shape[1])
     history = model.fit(
         X_train_scaled, y_train, 
         epochs=epochsVal, 
-        batch_size=32, 
-        callbacks=[callback],
+        batch_size=256, 
+        callbacks=[],
         validation_data=(X_val_scaled, y_val)
     )
     
@@ -118,7 +156,7 @@ def train_and_save_model(input_bag, model_path='robot_model.keras'):
     plt.ylabel('Mean Absolute Error')
     plt.legend()
     
-    plt.savefig(f"{input_bag}/_data/MAE_{epochsVal}.png")
+    plt.savefig(f"{input_bag}/MAE_{epochsVal}.png")
     plt.tight_layout()
     plt.show()
    
@@ -161,7 +199,7 @@ def combined_training_data(input_directory, model_path='robot_model.keras'):
         training_labels = pd.read_csv(f"{data_dir}/input_data/cmd_vel_output.csv")
    
         # Preprocess data
-        training_lidar = training_lidar.iloc[:,1:]
+        training_lidar = training_lidar.iloc[:,:]
         training_odom = training_odom.iloc[:, [1,2,4,5]]
         training_labels = training_labels.iloc[:, [1,2]]
         training_odom = training_odom.iloc[:-1,:]
@@ -202,9 +240,9 @@ def combined_training_data(input_directory, model_path='robot_model.keras'):
     print(f" combined features shape {combined_features.shape}")
     epochsVal = 1000
     # early stopping
-    early_stopping = EarlyStopping(monitor='val_accuracy', mode='min', patience=5, restore_best_weights=True)
     #learning rate schedule
     
+    early_stopping = EarlyStopping(monitor='val_accuracy', patience=5, min_delta=0.001, restore_best_weights=True)
     # Create and train model
     model = create_model(X_train_scaled.shape[1])
     history = model.fit(
@@ -310,7 +348,7 @@ def main():
         #if os.path.exists(f"{args.input_bag}/input_data"):
         #    print("training data already exists")
         #else: 
-        training_complete.createFeatures(args.input_bag)
+        #training_complete.createFeatures(args.input_bag)
         train_and_save_model(args.input_bag, args.model)
     
     if args.predict:
