@@ -12,7 +12,8 @@ import glob
 import training_complete
 from keras.callbacks import EarlyStopping
 from keras.optimizers import Adam
-
+from sklearn.preprocessing import RobustScaler
+from sklearn.preprocessing import StandardScaler
 def create_model_simple(input_shape):
     """
     Create the neural network model architecture with regularization
@@ -36,7 +37,7 @@ def create_model_simple(input_shape):
 
     # Actually use the learning rate schedule
     lr_schedule = keras.optimizers.schedules.ExponentialDecay(
-        initial_learning_rate=1e-3,
+        initial_learning_rate=1e-1,
         decay_steps=10000,
         decay_rate=0.9)
 
@@ -91,12 +92,12 @@ def train_and_save_model(input_bag, model_path='robot_model.keras'):
     """
     # Load data
     training_lidar = pd.read_csv(f"{input_bag}/input_data/lidar_data.csv") # no heaer (map frame)
-    training_odom = pd.read_csv(f"{input_bag}/input_data/odom_data.csv", header=1) # odom_curren_v, odom_current_w (odom frame)
-    training_local_goals = pd.read_csv(f"{input_bag}/input_data/local_goals.csv", header=1) # local_goal_x, local_goal_y, local_goal_yaw (map frame)
-    training_labels = pd.read_csv(f"{input_bag}/input_data/cmd_vel_output.csv",header=1)
-   
+    training_odom = pd.read_csv(f"{input_bag}/input_data/odom_data.csv") # odom_curren_v, odom_current_w (odom frame)
+    training_local_goals = pd.read_csv(f"{input_bag}/input_data/local_goals.csv") # local_goal_x, local_goal_y, local_goal_yaw (map frame)
+    training_labels = pd.read_csv(f"{input_bag}/input_data/cmd_vel_output.csv")
+ 
     # Preprocess data
-    training_lidar = training_lidar.iloc[:,1:]
+    #training_lidar = training_odom.iloc[:-1, :]
     training_odom = training_odom.iloc[:, [4,5]]
     training_labels = training_labels.iloc[:, [1,2]]
     training_local_goals = training_local_goals.iloc[:, :]
@@ -163,10 +164,10 @@ def train_and_save_model(input_bag, model_path='robot_model.keras'):
     # Save the scaler to use for inference
     np.save('scaler_min.npy', scaler.min_)
     np.save('scaler_scale_.npy', scaler.scale_)
-    
+    np.savetxt('scaler_mins.txt', scaler.data_min_)
+    np.savetxt('scaler_max.txt', scaler.data_max_)
     # Save the combined data
     return scaler
-
 
 
 def combined_training_data(input_directory, model_path='robot_model.keras'):
@@ -182,34 +183,41 @@ def combined_training_data(input_directory, model_path='robot_model.keras'):
     Saves:
         Also saves this data in combined_features dkr
     """
-
+  # Handle different input types
+    if isinstance(input_directory, str):
+        # If it's a string, assume it's a parent directory and get subdirectories
+        if os.path.isdir(input_directory):
+            subdirs = [f.path for f in os.scandir(input_directory) if f.is_dir()]
+        else:
+            raise ValueError(f"Directory not found: {input_directory}")
+    elif isinstance(input_directory, list):
+        # If it's a list, use it directly
+        subdirs = input_directory
+    else:
+        raise ValueError("input_directory must be a string (path) or list of paths")
+    
+    print(f"Processing {len(subdirs)} directories")
     
     combined_features = None
     combined_labels = None
-    for data_dir in input_directory:
+    for data_dir in subdirs:
         if os.path.exists(f"{data_dir}/input_data"): # values already been calculated
             print(f"value already exist in {data_dir}")
         else:
-            training_complete.createFeatures(data_dir)
-            print(f"adding training data {data_dir}")
+            print(f"training data does not exist")
 
-        training_lidar = pd.read_csv(f"{data_dir}/input_data/lidar_data.csv")
-        training_odom = pd.read_csv(f"{data_dir}/input_data/odom_data.csv")
-        training_local_goals = pd.read_csv(f"{data_dir}/input_data/local_goals.csv")
-        training_labels = pd.read_csv(f"{data_dir}/input_data/cmd_vel_output.csv")
+        training_lidar = pd.read_csv(f"{data_dir}/input_data/lidar_data.csv", header = 0)
+        training_odom = pd.read_csv(f"{data_dir}/input_data/odom_data.csv", header = 0)
+        training_local_goals = pd.read_csv(f"{data_dir}/input_data/local_goals.csv", header = 0)
+        training_labels = pd.read_csv(f"{data_dir}/input_data/cmd_vel_output.csv", header = 0)
    
         # Preprocess data
         training_lidar = training_lidar.iloc[:,:]
-        training_odom = training_odom.iloc[:, [1,2,4,5]]
+        training_odom = training_odom.iloc[:, [4,5]]
         training_labels = training_labels.iloc[:, [1,2]]
-        training_odom = training_odom.iloc[:-1,:]
-        training_labels = training_labels.iloc[:-1, :]
-        training_local_goals = training_local_goals.iloc[:-1, :]
         
         # Combine features
         features = pd.concat([training_odom, training_lidar, training_local_goals], axis=1)
-        feature_columns = [f'feature_{i}' for i in range(features.shape[1])]
-        features.columns = feature_columns
         print(f"feautres shape of {data_dir} : {features.shape}")     
     
 
@@ -238,21 +246,26 @@ def combined_training_data(input_directory, model_path='robot_model.keras'):
     print(f"Saved combined dataset to {combined_dir}")
     
     print(f" combined features shape {combined_features.shape}")
-    epochsVal = 1000
+    epochsVal = 500
     # early stopping
     #learning rate schedule
     
-    early_stopping = EarlyStopping(monitor='val_accuracy', patience=5, min_delta=0.001, restore_best_weights=True)
+    early_stopping = EarlyStopping(
+    monitor='val_loss',     # Change to a metric that exists in your model
+    mode='min',           # Lower MAE is better, so use 'min'
+    patience=5,
+    min_delta=0.001,
+    restore_best_weights=True
+)
     # Create and train model
     model = create_model(X_train_scaled.shape[1])
     history = model.fit(
         X_train_scaled, y_train, 
         epochs=epochsVal, 
-        batch_size=64, 
-        callbacks=[early_stopping],
+        batch_size=256, 
+        callbacks=[],
         validation_data=(X_val_scaled, y_val)
     )
-
     
     # Save the model and scaler
     model.save(model_path)
@@ -282,8 +295,6 @@ def combined_training_data(input_directory, model_path='robot_model.keras'):
     plt.show()
     
     return combined_features, combined_labels
-
-        # Now we have the data
 
 def load_model_and_predict(input_data, model_path='robot_model_adv.keras', scaler_path='feature_scaler.joblib'):
     """
@@ -316,18 +327,6 @@ def load_model_and_predict(input_data, model_path='robot_model_adv.keras', scale
     return predictions
      
 
-def input_directory_source():
-
-    """ Want to return a list of directories which are within the training folder
-    which are ros bags"""
-
-    os.makedirs("training", exist_ok = True)
-
-    dirs = [d for d in glob.glob(f"training_temp2/*/") if os.path.isdir(d)] 
-
-    print(dirs)
-
-    return dirs
 def main():
     parser = argparse.ArgumentParser(description="Robot Model Training and Inference")
     parser.add_argument("input_bag", type=str, help="Path to input data bag")
@@ -340,8 +339,7 @@ def main():
 
     
     if args.add:
-        dir = input_directory_source()
-        combined_training_data(dir, args.model)
+        combined_training_data(args.input_bag, args.model)
 
     if args.train:
         # Train and save the model
@@ -349,7 +347,7 @@ def main():
         #    print("training data already exists")
         #else: 
         #training_complete.createFeatures(args.input_bag)
-        train_and_save_model(args.input_bag, args.model)
+       train_and_save_model(args.input_bag, args.model)
     
     if args.predict:
         # Example of loading data for prediction

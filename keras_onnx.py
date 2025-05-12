@@ -6,7 +6,7 @@ import shutil
 from tensorflow.keras.models import load_model
 
 # Load the Keras model
-keras_model = load_model('robot_model_adv.keras')
+keras_model = load_model('may9.keras')
 
 # Print model details for debugging
 print(f"Model type: {type(keras_model)}")
@@ -26,7 +26,7 @@ import subprocess
 result = subprocess.run([
     "python3", "-m", "tf2onnx.convert",
     "--saved-model", save_path,
-    "--output", "robot_model_adv.onnx",
+    "--output", "may9.onnx",
     "--opset", "13"
 ], capture_output=True, text=True)
 
