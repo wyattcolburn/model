@@ -6,7 +6,7 @@ import shutil
 from tensorflow.keras.models import load_model
 
 # Load the Keras model
-keras_model = load_model('may15_min_max.keras')
+keras_model = load_model('model.keras')
 
 # Print model details for debugging
 print(f"Model type: {type(keras_model)}")
@@ -26,7 +26,7 @@ import subprocess
 result = subprocess.run([
     "python3", "-m", "tf2onnx.convert",
     "--saved-model", save_path,
-    "--output", "may15_min_max.onnx",
+    "--output", "model.onnx",
     "--opset", "13"
 ], capture_output=True, text=True)
 
