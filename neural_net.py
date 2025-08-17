@@ -10,42 +10,13 @@ import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
 import glob
-import training_complete
+# import training_complete
 from keras.callbacks import EarlyStopping
 from keras.optimizers import Adam
 from sklearn.preprocessing import RobustScaler
 from sklearn.preprocessing import StandardScaler
-def create_model_simple(input_shape):
-    """
-    Create the neural network model architecture with regularization
-
-    Args:
-        input_shape (int): Number of input features
-
-    Returns:
-        keras.Sequential: Compiled model
-    """
-    model = keras.Sequential([
-        layers.Input(shape=(input_shape,)),
-        layers.BatchNormalization(),  # Normalize the inputs
-        layers.Dense(128, activation='relu', kernel_regularizer=keras.regularizers.l2(0.001)),
-        layers.Dropout(0.3),  # Add dropout to prevent overfitting
-        layers.Dense(64, activation='relu', kernel_regularizer=keras.regularizers.l2(0.001)),
-        layers.Dropout(0.3),
-        layers.Dense(32, activation='relu', kernel_regularizer=keras.regularizers.l2(0.001)),
-        layers.Dense(2)  # Output layer with 2 neurons
-    ])
-
-    # Actually use the learning rate schedule
-    lr_schedule = keras.optimizers.schedules.ExponentialDecay(
-        initial_learning_rate=1e-3,
-        decay_steps=10000,
-        decay_rate=0.9)
-
-    optimizer = keras.optimizers.Adam(learning_rate=lr_schedule)
-    model.compile(optimizer=optimizer, loss='mse', metrics=['mae'])
-
-    return model
+import time
+os.environ["CUDA_VISIBLE_DEVICES"] = "-1"  # force CPU for now
 def create_model(input_shape):
     """
     Create the neural network model architecture
@@ -75,14 +46,6 @@ def create_model(input_shape):
     print("*****************************OUR ADAM WITH SCHEDULING")
     model.compile(optimizer=ourAdam, loss='mse', metrics=['mae'])
     return model
-def modulation(w1, w2, p):
-
-    """
-    Requires odom data, and obstacle data, then with current_v, current_w need to create
-    a safety function for modulation
-
-    """
-    pass
 
 def train_and_save_model_combined(input_bag, model_path='combined.keras'):
 
@@ -91,6 +54,10 @@ def train_and_save_model_combined(input_bag, model_path='combined.keras'):
     features: odom_odom_v, odom_odom_w, lidar0-1079, goal_local_goals_x	goal_local_goals_y	goal_local_goals_yaw
 
     """
+    if len(input_bag) == 1:
+        print("input bag just 1 length")
+        input_bag = input_bag[0]       
+
     try:
         features = pd.read_csv(f"{input_bag}/combined_features.csv", header=0)
         labels = pd.read_csv(f"{input_bag}/combined_labels.csv", header=0)
@@ -108,7 +75,7 @@ def train_and_save_model_combined(input_bag, model_path='combined.keras'):
         scaler = MinMaxScaler()
         X_train_scaled = scaler.fit_transform(X_train)
         X_val_scaled = scaler.transform(X_val)
-        epochsVal = 500
+        epochsVal = 50
 
         # early stopping
         early_stopping = EarlyStopping(
@@ -134,27 +101,7 @@ def train_and_save_model_combined(input_bag, model_path='combined.keras'):
         # Optional: Save scaler for inference
         
         # Plot training history
-        plt.figure(figsize=(12,4))
-        plt.subplot(1,2,1)
-        plt.plot(history.history['loss'], label='Training loss')
-        plt.plot(history.history['val_loss'], label='Validation loss')
-        plt.title('Training and Validation Loss')
-        plt.xlabel('Epochs')
-        plt.ylabel('Loss')
-        plt.legend()
-        
-        plt.subplot(1,2,2)
-        plt.plot(history.history['mae'], label='Training MAE')
-        plt.plot(history.history['val_mae'], label='Validation MAE')
-        plt.title('Training and Validation MAE')
-        plt.xlabel('Epochs')
-        plt.ylabel('Mean Absolute Error')
-        plt.legend()
-        
-        plt.savefig(f"{input_bag}/MAE_{epochsVal}.png")
-        plt.tight_layout()
-        plt.show()
-       
+        graphs(history, "graph_test.png")
         # Save the scaler to use for inference
         np.save('combine_scaler_min.npy', scaler.min_)
         np.save('combine_scaler_scale_.npy', scaler.scale_)
@@ -173,9 +120,82 @@ def train_and_save_model_combined(input_bag, model_path='combined.keras'):
         exit(1)
 
     return
-def train_and_save_model(input_bag, model_path='robot_model.keras'):
+def train_combined(input_bag):
     """
     Train the model and save it to a file
+    
+    Args:
+        input_bag (str): Path to input data directory
+        model_path (str): Path to save the trained model
+    """
+    # Load data
+    features = pd.read_csv(f"{input_bag}/combined_features.csv") # no heaer (map frame)
+    training_labels = pd.read_csv(f"{input_bag}/combined_labels.csv") # no heaer (map frame)
+ 
+    print(f"feature size {features.shape} and label shape {training_labels.shape}")
+    
+    # Split data
+    X_train, X_val, y_train, y_val = train_test_split(features, training_labels, test_size=0.2, random_state=42)
+    
+    # Normalize data
+    scaler = MinMaxScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_val_scaled = scaler.transform(X_val)
+    epochsVal = 500
+
+    # early stopping
+    early_stopping = EarlyStopping(
+    monitor='val_loss',     # Change to a metric that exists in your model
+    mode='min',           # Lower MAE is better, so use 'min'
+    patience=5,
+    min_delta=0.001,
+    restore_best_weights=True
+)
+    # Create and train model
+    model = create_model(X_train_scaled.shape[1])
+    history = model.fit(
+        X_train_scaled, y_train, 
+        epochs=epochsVal, 
+        batch_size=256, 
+        callbacks=[],
+        validation_data=(X_val_scaled, y_val)
+    )
+    
+    # Save the model and scaler
+    model.save("combine_08_14.keras")
+    
+    # Optional: Save scaler for inference
+    
+    # Plot training history
+    plt.figure(figsize=(12,4))
+    plt.subplot(1,2,1)
+    plt.plot(history.history['loss'], label='Training loss')
+    plt.plot(history.history['val_loss'], label='Validation loss')
+    plt.title('Training and Validation Loss')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    plt.legend()
+    
+    plt.subplot(1,2,2)
+    plt.plot(history.history['mae'], label='Training MAE')
+    plt.plot(history.history['val_mae'], label='Validation MAE')
+    plt.title('Training and Validation MAE')
+    plt.xlabel('Epochs')
+    plt.ylabel('Mean Absolute Error')
+    plt.legend()
+    
+    plt.savefig(f"combined_MAE.png")
+    plt.tight_layout()
+    plt.show()
+   
+    # Save the scaler to use for inference
+    np.savetxt('combine_08_14_scaler_mins.txt', scaler.data_min_)
+    np.savetxt('combine_08_14_scaler_max.txt', scaler.data_max_)
+    # Save the combined data
+    return scaler
+def train_and_save_model(input_bag, model_path='robot_model.keras'):
+    """
+    Train the model and save it to a file, this only takes one input bag (does not take combined data)
     
     Args:
         input_bag (str): Path to input data directory
@@ -263,20 +283,24 @@ def train_and_save_model(input_bag, model_path='robot_model.keras'):
     return scaler
 
 
-def combined_training_data(input_directory, model_path='robot_model.keras'):
+def large_dataset(input_directory, model_path='robot_model.keras'):
     """
-    Want to combined training data from multiple directories within training directory
-
+    Function to create large data sets
     Args:
         input_directory (list) of the directories that have a bag
+            It is possible that data has already been created within a dkr has already been combined
+
+    If there exists combined_features in both csv, then just add them
+    Else: 
+        create the combined data sets first
 
     Returns:
-        combined_features, combined_labels,
-
-    Saves:
-        Also saves this data in combined_features dkr
+        new directory with timestamp_combined_features, timestamp_combined_labels,
+        model call timestamp.keras
+        meta data, what this model was trainined on 
     """
   # Handle different input types
+    print(input_directory)
     if isinstance(input_directory, str):
         # If it's a string, assume it's a parent directory and get subdirectories
         if os.path.isdir(input_directory):
@@ -294,11 +318,24 @@ def combined_training_data(input_directory, model_path='robot_model.keras'):
     combined_features = None
     combined_labels = None
     for data_dir in subdirs:
-        if os.path.exists(f"{data_dir}/input_data"): # values already been calculated
+        if os.path.exists(f"{data_dir}/combined_features.csv") and os.path.exists(f"{data_dir}/combined_labels.csv"): # values already been calculated
             print(f"value already exist in {data_dir}")
+
+
+            if combined_features is None and combined_labels is None:
+                combined_features = pd.read_csv(f"{data_dir}/combined_features.csv", header = 0)
+                combined_labels = pd.read_csv(f"{data_dir}/combined_labels.csv", header = 0)
+            else:
+                features = pd.read_csv(f"{data_dir}/combined_features.csv", header = 0)
+                labels = pd.read_csv(f"{data_dir}/combined_labels.csv", header = 0)
+                assert features.shape[1] == combined_features.shape[1], f"Feature dimension mismatch: {features.shape[1]} vs {combined_features.shape[1]}"
+                # Append rows
+                combined_features = pd.concat([combined_features, features], axis=0, ignore_index=True)
+                combined_labels = pd.concat([combined_labels, labels], axis=0, ignore_index=True)
+            print(f"combined features {combined_features.shape} and labels {combined_labels.shape}")
         else:
             print(f"training data does not exist")
-
+    """
         training_lidar = pd.read_csv(f"{data_dir}/input_data/lidar_data.csv", header = 0)
         training_odom = pd.read_csv(f"{data_dir}/input_data/odom_data.csv", header = 0)
         training_local_goals = pd.read_csv(f"{data_dir}/input_data/local_goals.csv", header = 0)
@@ -398,7 +435,7 @@ def combined_training_data(input_directory, model_path='robot_model.keras'):
     
     return combined_features, combined_labels
 
-     
+    """ 
 def load_model_and_predict(input_data, model_path='robot_model_adv.keras', scaler_path='feature_scaler.joblib'):
     """
     Load trained model and make predictions
@@ -431,11 +468,11 @@ def load_model_and_predict(input_data, model_path='robot_model_adv.keras', scale
 
 def main():
     parser = argparse.ArgumentParser(description="Robot Model Training and Inference")
-    parser.add_argument("input_bag", type=str, help="Path to input data bag")
+    parser.add_argument("input_bag", type=str, nargs='+', help="Path to input data bag")
     parser.add_argument("--train", action="store_true", help="Train the model")
     parser.add_argument("--predict", action="store_true", help="Run inference")
-    parser.add_argument("--add", action="store_true", help="Add to training dataset") 
-    parser.add_argument("model",type=str, help="Which model do you want to run")
+    parser.add_argument("--large", action="store_true", help="Multiple data directories") 
+    parser.add_argument("--model",type=str, help="Which model do you want to run")
     parser.add_argument("--combine", action="store_true", help="add to big dataset")
     parser.add_argument("--train_combine", action="store_true", help="train based on combined dkr")
     args = parser.parse_args()
@@ -443,8 +480,8 @@ def main():
 
     if args.train_combine:
         train_and_save_model_combined(args.input_bag, args.model)
-    if args.add:
-        combined_training_data(args.input_bag, args.model)
+    if args.large:
+        large_dataset(args.input_bag)
 
     if args.train:
         # Train and save the model
@@ -452,7 +489,8 @@ def main():
         #    print("training data already exists")
         #else: 
         #training_complete.createFeatures(args.input_bag)
-       train_and_save_model(args.input_bag, args.model)
+        train_combined(args.input_bag)
+        # train_and_save_model(args.input_bag, args.model)
     
     if args.predict:
         # Example of loading data for prediction
@@ -546,7 +584,7 @@ def main():
         print(f"shape of combined feautres {combined_features.shape} and labels {combined_labels.shape}")
 
 
-        if os.path.exists("combined_features.csv"):
+        if os.path.exists(f"{args.input_bag}/combined_features.csv"):
 
             print("file already exists")
             # check if this dkr has already been added
@@ -567,10 +605,10 @@ def main():
         else:
             print("creating a file for features")
             features_df = pd.DataFrame(combined_features)
-            features_df.to_csv('combined_features.csv', mode='w', header=True, index=False)
+            features_df.to_csv(f'{args.input_bag}/combined_features.csv', mode='w', header=True, index=False)
 
             labels_df = pd.DataFrame(combined_labels)
-            labels_df.to_csv('combined_labels.csv', mode='w', header=True, index=False)
+            labels_df.to_csv(f'{args.input_bag}/combined_labels.csv', mode='w', header=True, index=False)
             print("creating log file")
             log_processing(input_directory)
             dkr_list = read_processing()
@@ -578,6 +616,30 @@ def main():
                 print(dkr)
         print("success")
 
+
+
+def graphs(history, filepath):
+
+    plt.figure(figsize=(12,4))
+    plt.subplot(1,2,1)
+    plt.plot(history.history['loss'], label='Training loss')
+    plt.plot(history.history['val_loss'], label='Validation loss')
+    plt.title('Training and Validation Loss')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    plt.legend()
+    
+    plt.subplot(1,2,2)
+    plt.plot(history.history['mae'], label='Training MAE')
+    plt.plot(history.history['val_mae'], label='Validation MAE')
+    plt.title('Training and Validation MAE')
+    plt.xlabel('Epochs')
+    plt.ylabel('Mean Absolute Error')
+    plt.legend()
+    
+    plt.savefig(filepath)
+    plt.tight_layout()
+    plt.show()
 def log_processing(input_directory, csv_file="proccessed_data.csv"):
 
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
