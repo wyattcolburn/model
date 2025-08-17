@@ -1,4 +1,4 @@
-# Ignore all dkr
+# Ignore all dkrj
 training_temp/
 training_temp2/
 
@@ -16,3 +16,6 @@ combine_dir/
 map_frame_training/**/*.csv
 may12_combined/
 may*
+august*
+poc*
+combined*
