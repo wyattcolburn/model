@@ -1,21 +1,48 @@
-# Ignore all dkrj
-training_temp/
-training_temp2/
 
+# === Python cache ===
+__pycache__/
+*.pyc
+
+# === Training artifacts & models ===
+*.keras
+*.h5
+*.onnx
+*.pkl
+*.npy
+*.npz
+*.json
+*.png
+*.csv
+
+# If you only want to ignore CSVs in data dirs, use:
+# **/input_data/*.csv
+# **/combined_dir/*.csv
+
+# === TensorFlow SavedModel ===
+saved_model/
+
+# === ROS/rosbag & big data ===
+**/*.db3
+rosbag2_*/        # any rosbag2 dir
+segments_cache.csv
+
+# === Project-specific data dirs ===
+august_*/
+poc_*/
+may*/             # if those are always data dirs; otherwise be more specific
+combined_dir/
+combined_dkr_*/
+map_frame_training/**
+
+# === Training temp dirs ===
+training_temp*/
+training_temp2*/
+training/
+model/
+test1*/
+test1_data/
+test2*/
 mar_12_test1/
-march12_test1/
-march12_test1_2/
+march12_test1*/
 march7_test1/
 march7_test2/
-model/
-test1/
-test1_data/
-test2/
-training/
-combine_dir/
-map_frame_training/**/*.csv
-may12_combined/
-may*
-august*
-poc*
-combined*
