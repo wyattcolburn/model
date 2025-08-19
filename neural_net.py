@@ -393,7 +393,95 @@ def large_dataset(input_directory, model_path='robot_model.keras'):
             print(
                 f"combined features {combined_features.shape} and labels {combined_labels.shape}")
         else:
-            print("training data does not exist:", data_dir)
+            print(
+                f"combined features does not exists within {data_dir} will create")
+            # data dir will have seg_* which need to combined for combine_features
+            seg_dirs = [d for d in os.listdir(data_dir)
+                        if os.path.isdir(os.path.join(data_dir, d))]
+
+            print("Found subdirectories:", seg_dirs)
+
+            # If you only care about seg_* dirs
+            seg_dirs = [d for d in seg_dirs if d.startswith("seg_")]
+
+            print("Filtered subdirectories:", seg_dirs)
+            # just for this directory so combined_features can be created within directory
+            local_features = None
+            local_labels = None
+            for dir in seg_dirs:
+
+                training_lidar = pd.read_csv(
+                    f"{data_dir}/{dir}/input_data/lidar_data.csv", header=0)
+                training_odom = pd.read_csv(
+                    f"{data_dir}/{dir}/input_data/odom_data.csv", header=0)
+                training_local_goals = pd.read_csv(
+                    f"{data_dir}/{dir}/input_data/local_goals.csv", header=0)
+                training_labels = pd.read_csv(
+                    f"{data_dir}/{dir}/input_data/cmd_vel_output.csv", header=0)
+
+                # Preprocess data
+                training_lidar = training_lidar.iloc[:-1, :]
+                training_odom = training_odom.iloc[:, [5, 6]]
+                training_local_goals = training_local_goals.iloc[:, [1, 2, 3]]
+                training_labels = training_labels.iloc[:, [2, 3]]
+                training_odom.columns = [
+                    f'odom_{col}' for col in training_odom.columns]
+                training_lidar.columns = [
+                    f'lidar_{i}' for i in range(training_lidar.shape[1])]
+                training_local_goals.columns = [
+                    f'goal_{col}' for col in training_local_goals.columns]
+
+                # Combine features
+                features = pd.concat(
+                    [training_odom, training_local_goals, training_lidar], axis=1)
+                print(f"feautres shape of {data_dir} : {features.shape}")
+                print(f"labels shape of {data_dir} : {training_labels.shape}")
+
+                # Add to combined dataframes
+                if local_features is None:
+                    local_features = features
+                    local_labels = training_labels
+                else:
+                    # Make sure columns align before concatenating
+                    assert features.shape[1] == local_features.shape[
+                        1], f"Feature dimension mismatch: {features.shape[1]} vs {local_features.shape[1]}"
+                    # Append rows
+                    local_features = pd.concat(
+                        [local_features, features], axis=0, ignore_index=True)
+                    local_labels = pd.concat(
+                        [local_labels, training_labels], axis=0, ignore_index=True)
+            print(f"creating combined features for {data_dir}")
+            features_df = pd.DataFrame(local_features)
+            features_df.to_csv(
+                f'{data_dir}/combined_features.csv', mode='w', header=True, index=False)
+            labels_df = pd.DataFrame(local_labels)
+            labels_df.to_csv(
+                f'{data_dir}/combined_labels.csv', mode='w', header=True, index=False)
+
+            if combined_features is None:
+                combined_features = local_features
+                combined_labels = local_labels
+
+            else:
+
+                assert df_feats.shape[1] == combined_features.shape[1], \
+                    f"Feature dimension mismatch: {df_feats.shape[1]} vs {combined_features.shape[1]}"
+                combined_features = pd.concat(
+                    [combined_features, df_feats], axis=0, ignore_index=True)
+                combined_labels = pd.concat(
+                    [combined_labels,   df_labs],  axis=0, ignore_index=True)
+
+            total_rows += len(df_feats)
+            yaml_data["datasets"].append({
+                "name": os.path.basename(os.path.normpath(data_dir)),
+                "path": os.path.abspath(data_dir),
+                "features_csv": os.path.abspath(feats_p),
+                "labels_csv":   os.path.abspath(labs_p),
+                "features_shape": {"rows": int(df_feats.shape[0]), "cols": int(df_feats.shape[1])},
+                "labels_shape":   {"rows": int(df_labs.shape[0]),  "cols": int(df_labs.shape[1])},
+                # optional things you may want:
+                # "feature_columns": list(df_feats.columns),
+            })
 
     # Fill combined summary
     if combined_features is not None:
@@ -604,6 +692,7 @@ def main():
     if args.combine:
 
         input_directory = args.input_bag
+
         if isinstance(input_directory, str):
             # If it's a string, assume it's a parent directory and get subdirectories
             if os.path.isdir(input_directory):
@@ -618,8 +707,12 @@ def main():
             raise ValueError(
                 "input_directory must be a string (path) or list of paths")
 
-        print(f"Processing {len(subdirs)} directories")
-
+        # print(f"Processing {len(subdirs)} directories")
+        # subdirs = glob.glob(os.path.join(
+        #     input_directory, "**/"), recursive=True)
+        subdirs = [d for d in subdirs if os.path.isdir(d)]
+        for data_dir in subdirs:
+            print(f"printing dkr {data_dir}")
         combined_features = None
         combined_labels = None
         for data_dir in subdirs:
@@ -652,7 +745,7 @@ def main():
 
             # Combine features
             features = pd.concat(
-                [training_odom, training_lidar, training_local_goals], axis=1)
+                [training_odom, training_local_goals, training_lidar], axis=1)
             print(f"feautres shape of {data_dir} : {features.shape}")
             print(f"labels shape of {data_dir} : {training_labels.shape}")
 

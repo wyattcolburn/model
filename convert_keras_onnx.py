@@ -3,8 +3,9 @@
 import tensorflow as tf
 import tf2onnx
 from tensorflow.keras.models import load_model
-
-m = load_model("combine_08_14.keras")
+import os
+filepath = "/home/mobrob/model/data_set/2025_08_18_13_19/2025_08_18_13_19.keras"
+m = load_model(filepath)
 
 # Patch for tf2onnx<=1.16 expecting Keras-2 API
 flat_out = tf.nest.flatten(m.outputs)
@@ -14,6 +15,6 @@ INPUT_DIM = m.input_shape[-1]
 spec = (tf.TensorSpec([None, INPUT_DIM], tf.float32, name="input"),)
 
 onnx_model, _ = tf2onnx.convert.from_keras(
-    m, input_signature=spec, opset=17, output_path="combine_08_14.onnx"
+    m, input_signature=spec, opset=17, output_path="august18_100.onnx"
 )
 print("Exported model.onnx")
