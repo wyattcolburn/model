@@ -1,0 +1,23 @@
+run:
+  timestamp: '2025_08_18_13_19'
+  output_dir: data_set/2025_08_18_13_19
+datasets:
+- name: poc_august16_pt2
+  path: /home/mobrob/model/poc_august16_pt2
+  features_csv: /home/mobrob/model/poc_august16_pt2/combined_features.csv
+  labels_csv: /home/mobrob/model/poc_august16_pt2/combined_labels.csv
+  features_shape:
+    rows: 110019
+    cols: 1085
+  labels_shape:
+    rows: 110019
+    cols: 2
+combined:
+  features_shape:
+    rows: 110019
+    cols: 1085
+  labels_shape:
+    rows: 110019
+    cols: 2
+  num_datasets: 1
+  total_rows: 110019

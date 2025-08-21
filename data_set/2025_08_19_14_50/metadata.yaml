@@ -1,0 +1,23 @@
+run:
+  timestamp: '2025_08_19_14_50'
+  output_dir: data_set/2025_08_19_14_50
+datasets:
+- name: august_18
+  path: /home/mobrob/ros_ws/august_18
+  features_csv: /home/mobrob/ros_ws/august_18/combined_features.csv
+  labels_csv: /home/mobrob/ros_ws/august_18/combined_labels.csv
+  features_shape:
+    rows: 26142
+    cols: 1085
+  labels_shape:
+    rows: 26142
+    cols: 2
+combined:
+  features_shape:
+    rows: 26142
+    cols: 1085
+  labels_shape:
+    rows: 26142
+    cols: 2
+  num_datasets: 1
+  total_rows: 26142

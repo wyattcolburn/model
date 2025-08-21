@@ -1,0 +1,33 @@
+run:
+  timestamp: '2025_08_17_18_18'
+  output_dir: data_set/2025_08_17_18_18
+datasets:
+- name: poc_may19_large
+  path: /home/mobrob/model/poc_may19_large
+  features_csv: /home/mobrob/model/poc_may19_large/combined_features.csv
+  labels_csv: /home/mobrob/model/poc_may19_large/combined_labels.csv
+  features_shape:
+    rows: 57762
+    cols: 1085
+  labels_shape:
+    rows: 57762
+    cols: 2
+- name: poc_august16_pt2
+  path: /home/mobrob/model/poc_august16_pt2
+  features_csv: /home/mobrob/model/poc_august16_pt2/combined_features.csv
+  labels_csv: /home/mobrob/model/poc_august16_pt2/combined_labels.csv
+  features_shape:
+    rows: 110019
+    cols: 1085
+  labels_shape:
+    rows: 110019
+    cols: 2
+combined:
+  features_shape:
+    rows: 167781
+    cols: 1085
+  labels_shape:
+    rows: 167781
+    cols: 2
+  num_datasets: 2
+  total_rows: 167781
