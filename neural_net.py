@@ -20,6 +20,14 @@ from sklearn.preprocessing import StandardScaler
 from datetime import datetime
 os.environ["CUDA_VISIBLE_DEVICES"] = "-1"  # force CPU for now
 
+"""
+The idea is that you give the program you dataset (which contains the csv files)
+and it will create one large csv, but also create data for each ros bag
+
+Input:
+Directory of ros bag, or a list of ros bags. If all the bags are in one directory should be able to just give one input
+"""
+
 
 def create_model(input_shape):
     """
@@ -125,85 +133,6 @@ def train_and_save_model_combined(input_bag, model_path='combined.keras'):
         exit(1)
 
     return
-
-
-def train_combined(input_bag):
-    """
-    Train the model and save it to a file
-
-    Args:
-        input_bag (str): Path to input data directory
-        model_path (str): Path to save the trained model
-    """
-    # Load data
-    # no heaer (map frame)
-    features = pd.read_csv(f"{input_bag}/combined_features.csv")
-    training_labels = pd.read_csv(
-        f"{input_bag}/combined_labels.csv")  # no heaer (map frame)
-
-    print(
-        f"feature size {features.shape} and label shape {training_labels.shape}")
-
-    # Split data
-    X_train, X_val, y_train, y_val = train_test_split(
-        features, training_labels, test_size=0.2, random_state=42)
-
-    # Normalize data
-    scaler = MinMaxScaler()
-    X_train_scaled = scaler.fit_transform(X_train)
-    X_val_scaled = scaler.transform(X_val)
-    epochsVal = 500
-
-    # early stopping
-    early_stopping = EarlyStopping(
-        monitor='val_loss',     # Change to a metric that exists in your model
-        mode='min',           # Lower MAE is better, so use 'min'
-        patience=5,
-        min_delta=0.001,
-        restore_best_weights=True
-    )
-    # Create and train model
-    model = create_model(X_train_scaled.shape[1])
-    history = model.fit(
-        X_train_scaled, y_train,
-        epochs=epochsVal,
-        batch_size=256,
-        callbacks=[],
-        validation_data=(X_val_scaled, y_val)
-    )
-
-    # Save the model and scaler
-    model.save("combine_08_14.keras")
-
-    # Optional: Save scaler for inference
-
-    # Plot training history
-    plt.figure(figsize=(12, 4))
-    plt.subplot(1, 2, 1)
-    plt.plot(history.history['loss'], label='Training loss')
-    plt.plot(history.history['val_loss'], label='Validation loss')
-    plt.title('Training and Validation Loss')
-    plt.xlabel('Epochs')
-    plt.ylabel('Loss')
-    plt.legend()
-
-    plt.subplot(1, 2, 2)
-    plt.plot(history.history['mae'], label='Training MAE')
-    plt.plot(history.history['val_mae'], label='Validation MAE')
-    plt.title('Training and Validation MAE')
-    plt.xlabel('Epochs')
-    plt.ylabel('Mean Absolute Error')
-    plt.legend()
-
-    plt.savefig(f"combined_MAE.png")
-    plt.tight_layout()
-    plt.show()
-
-    # Save the scaler to use for inference
-    np.savetxt('combine_08_14_scaler_mins.txt', scaler.data_min_)
-    np.savetxt('combine_08_14_scaler_max.txt', scaler.data_max_)
-    # Save the combined data
-    return scaler
 
 
 def train_and_save_model(input_bag, model_path='robot_model.keras'):
@@ -537,85 +466,6 @@ def large_dataset(input_directory, model_path='robot_model.keras'):
     model.save(os.path.join(new_dir, model_path))
     graphs(history, new_dir)
     # Optional: Save scaler for inference
-    """
-    # Plot training history
-
-    return combined_features, combined_labels
-
-        training_lidar = pd.read_csv(
-            f"{data_dir}/input_data/lidar_data.csv", header = 0)
-        training_odom = pd.read_csv(
-            f"{data_dir}/input_data/odom_data.csv", header = 0)
-        training_local_goals = pd.read_csv(
-            f"{data_dir}/input_data/local_goals.csv", header = 0)
-        training_labels = pd.read_csv(
-            f"{data_dir}/input_data/cmd_vel_output.csv", header = 0)
-
-        # Preprocess data
-        training_lidar = training_lidar.iloc[:-1,:]
-        training_odom = training_odom.iloc[:, [5,6]]
-        training_local_goals = training_local_goals.iloc[:, [1,2,3]]
-        training_labels = training_labels.iloc[:, [2,3]]
-        training_odom.columns = [
-            f'odom_{col}' for col in training_odom.columns]
-        training_lidar.columns = [
-            f'lidar_{i}' for i in range(training_lidar.shape[1])]
-        training_local_goals.columns = [
-            f'goal_{col}' for col in training_local_goals.columns]
-
-        # Combine features
-        features = pd.concat(
-            [training_odom, training_lidar, training_local_goals], axis=1)
-        print(f"feautres shape of {data_dir} : {features.shape}")
-        print(f"labels shape of {data_dir} : {training_labels.shape}")
-
-
-        # Add to combined dataframes
-        if combined_features is None:
-            combined_features = features
-            combined_labels = training_labels
-        else:
-            # Make sure columns align before concatenating
-            assert features.shape[1] == combined_features.shape[
-                1], f"Feature dimension mismatch: {features.shape[1]} vs {combined_features.shape[1]}"
-            # Append rows
-            combined_features = pd.concat(
-                [combined_features, features], axis=0, ignore_index=True)
-            combined_labels = pd.concat(
-                [combined_labels, training_labels], axis=0, ignore_index=True)
-    # Split the data into training and validation
-    print(
-        f"shape of combined feautres {combined_features.shape} and labels {combined_labels.shape}")
-    """
-
-
-def load_model_and_predict(input_data, model_path='robot_model_adv.keras', scaler_path='feature_scaler.joblib'):
-    """
-    Load trained model and make predictions
-
-    Args:
-        input_data (pd.DataFrame): Input features for prediction
-        model_path (str): Path to saved model
-        scaler_path (str): Path to saved scaler
-
-    Returns:
-        np.ndarray: Predicted values
-    """
-    # Load the saved model
-    model = keras.models.load_model(model_path)
-
-    # Load the scaler
-    scaler = MinMaxScaler()
-    scaler.min_ = np.load('scaler_min.npy')
-    scaler.scale_ = np.load('scaler_scale_.npy')
-
-    # Scale the input data
-    input_scaled = scaler.transform(input_data)
-
-    # Make predictions
-    predictions = model.predict(input_scaled)
-    print(f"shape of predictions {predictions.shape}")
-    return predictions
 
 
 def main():
@@ -624,7 +474,6 @@ def main():
     parser.add_argument("input_bag", type=str, nargs='+',
                         help="Path to input data bag")
     parser.add_argument("--train", action="store_true", help="Train the model")
-    parser.add_argument("--predict", action="store_true", help="Run inference")
     parser.add_argument("--large", action="store_true",
                         help="Multiple data directories")
     parser.add_argument("--model", type=str,
@@ -648,159 +497,6 @@ def main():
         # training_complete.createFeatures(args.input_bag)
         train_combined(args.input_bag)
         # train_and_save_model(args.input_bag, args.model)
-
-    if args.predict:
-        # Example of loading data for prediction
-        # You'll need to prepare your input data similarly to training data
-        # if os.path.exists(f"{args.input_bag}/input_data"):
-       #     print("training data already exists")
-        # else:
-
-        training_lidar = pd.read_csv(
-            f"{args.input_bag}/input_bag/lidar_data.csv")  # no heaer (map frame)
-        # odom_curren_v, odom_current_w (odom frame)
-        training_odom = pd.read_csv(
-            f"{args.input_bag}/input_bag/odom_data.csv")
-        # local_goal_x, local_goal_y, local_goal_yaw (map frame)
-        training_local_goals = pd.read_csv(
-            f"{args.input_bag}/input_bag/local_goals.csv")
-
-        # Preprocess data
-        # training_lidar = training_odom.iloc[:-1, :]
-
-        training_lidar = training_lidar[:-1]  # Remove last row
-        training_odom = training_odom.iloc[:, [5, 6]]
-        training_local_goals = training_local_goals.iloc[:, [1, 2, 3]]
-
-        print(
-            f"shape of lidar, odom, labels, local_goals {training_lidar.shape} {training_odom.shape} {training_local_goals.shape}")
-
-        # Combine features
-        features = pd.concat(
-            [training_odom, training_local_goals, training_lidar], axis=1)
-
-        # Make predictions
-        predictions = load_model_and_predict(features)
-        print("Predictions:", predictions)
-        output_dir = os.path.join(args.input_bag, "output_data")
-        os.makedirs(output_dir, exist_ok=True)
-
-        np.savetxt(os.path.join(output_dir, "cmd_vel.csv"),
-                   predictions, delimiter=",")
-        print("written output cmd values")
-
-    if args.combine:
-
-        input_directory = args.input_bag
-
-        if isinstance(input_directory, str):
-            # If it's a string, assume it's a parent directory and get subdirectories
-            if os.path.isdir(input_directory):
-                subdirs = [f.path for f in os.scandir(
-                    input_directory) if f.is_dir()]
-            else:
-                raise ValueError(f"Directory not found: {input_directory}")
-        elif isinstance(input_directory, list):
-            # If it's a list, use it directly
-            subdirs = input_directory
-        else:
-            raise ValueError(
-                "input_directory must be a string (path) or list of paths")
-
-        # print(f"Processing {len(subdirs)} directories")
-        # subdirs = glob.glob(os.path.join(
-        #     input_directory, "**/"), recursive=True)
-        subdirs = [d for d in subdirs if os.path.isdir(d)]
-        for data_dir in subdirs:
-            print(f"printing dkr {data_dir}")
-        combined_features = None
-        combined_labels = None
-        for data_dir in subdirs:
-            # values already been calculated
-            if os.path.exists(f"{data_dir}/input_data"):
-                print(f"value already exist in {data_dir}")
-            else:
-                print(f"training data does not exist")
-
-            training_lidar = pd.read_csv(
-                f"{data_dir}/input_data/lidar_data.csv", header=0)
-            training_odom = pd.read_csv(
-                f"{data_dir}/input_data/odom_data.csv", header=0)
-            training_local_goals = pd.read_csv(
-                f"{data_dir}/input_data/local_goals.csv", header=0)
-            training_labels = pd.read_csv(
-                f"{data_dir}/input_data/cmd_vel_output.csv", header=0)
-
-            # Preprocess data
-            training_lidar = training_lidar.iloc[:-1, :]
-            training_odom = training_odom.iloc[:, [5, 6]]
-            training_local_goals = training_local_goals.iloc[:, [1, 2, 3]]
-            training_labels = training_labels.iloc[:, [2, 3]]
-            training_odom.columns = [
-                f'odom_{col}' for col in training_odom.columns]
-            training_lidar.columns = [
-                f'lidar_{i}' for i in range(training_lidar.shape[1])]
-            training_local_goals.columns = [
-                f'goal_{col}' for col in training_local_goals.columns]
-
-            # Combine features
-            features = pd.concat(
-                [training_odom, training_local_goals, training_lidar], axis=1)
-            print(f"feautres shape of {data_dir} : {features.shape}")
-            print(f"labels shape of {data_dir} : {training_labels.shape}")
-
-            # Add to combined dataframes
-            if combined_features is None:
-                combined_features = features
-                combined_labels = training_labels
-            else:
-                # Make sure columns align before concatenating
-                assert features.shape[1] == combined_features.shape[
-                    1], f"Feature dimension mismatch: {features.shape[1]} vs {combined_features.shape[1]}"
-                # Append rows
-                combined_features = pd.concat(
-                    [combined_features, features], axis=0, ignore_index=True)
-                combined_labels = pd.concat(
-                    [combined_labels, training_labels], axis=0, ignore_index=True)
-        # Make sure same size
-        print(
-            f"shape of combined feautres {combined_features.shape} and labels {combined_labels.shape}")
-
-        if os.path.exists(f"{args.input_bag}/combined_features.csv"):
-
-            print("file already exists")
-            # check if this dkr has already been added
-            dkr_list = read_processing()
-            if input_directory in dkr_list:
-                print("already added this data to combined dataset")
-                return
-
-            print(f"adding data from {input_directory}")
-            # do not need to create a header
-            features_df = pd.DataFrame(combined_features)
-            features_df.to_csv('combined_features.csv',
-                               mode='a', header=False, index=False)
-
-            labels_df = pd.DataFrame(combined_labels)
-            labels_df.to_csv('combined_labels.csv', mode='a',
-                             header=False, index=False)
-            log_processing(input_directory)
-
-        else:
-            print("creating a file for features")
-            features_df = pd.DataFrame(combined_features)
-            features_df.to_csv(
-                f'{args.input_bag}/combined_features.csv', mode='w', header=True, index=False)
-
-            labels_df = pd.DataFrame(combined_labels)
-            labels_df.to_csv(
-                f'{args.input_bag}/combined_labels.csv', mode='w', header=True, index=False)
-            print("creating log file")
-            log_processing(input_directory)
-            dkr_list = read_processing()
-            for dkr in dkr_list:
-                print(dkr)
-        print("success")
 
 
 def graphs(history, filepath):
