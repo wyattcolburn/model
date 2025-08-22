@@ -8,8 +8,11 @@ import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
 import tensorflow as tf
+import tf2onnx
+
 from tensorflow import keras
 from tensorflow.keras import layers
+from tensorflow.keras.models import load_model
 import glob
 # import training_complete
 from keras.callbacks import EarlyStopping
@@ -232,7 +235,7 @@ def train_and_save_model(input_bag, model_path='robot_model.keras'):
     return scaler
 
 
-def large_dataset(input_directory, model_path='robot_model.keras'):
+def large_dataset(input_directory, single_dkr_flag):
     """
     Function to create large data sets
     Args:
@@ -250,24 +253,38 @@ def large_dataset(input_directory, model_path='robot_model.keras'):
     """
 
     print(input_directory)
+    if single_dkr_flag:
+        if isinstance(input_directory, str):
+            print("directory is a str")
+            if os.path.isdir(input_directory):
+                subdirs = [f.path for f in os.scandir(
+                    input_directory) if f.is_dir()]
+            else:
+                raise ValueError(f"Directory not found: {input_directory}")
+        elif isinstance(input_directory, list):
+            if len(input_directory) == 1:
+                input_directory = input_directory[0]
+                subdirs = [os.path.join(input_directory, d) for d in os.listdir(input_directory)
+                           if os.path.isdir(os.path.join(input_directory, d))]
+        else:
+            raise ValueError(
+                "input_directory must be a string (path) or list of paths")
+
+    else:
+        # Multiple directories mode - use the list directly
+        if isinstance(input_directory, list):
+            print("Multiple directories mode: using provided list")
+            subdirs = input_directory
+        elif isinstance(input_directory, str):
+            print("Multiple directories mode: converting single string to list")
+            subdirs = [input_directory]
+        else:
+            raise ValueError(
+                "input_directory must be a string (path) or list of paths")
+        print(f"Processing {len(subdirs)} directories")
     timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M")
     new_dir = os.path.join("data_set", timestamp)
     os.makedirs(new_dir, exist_ok=True)
-
-    # Resolve subdirs list
-    if isinstance(input_directory, str):
-        if os.path.isdir(input_directory):
-            subdirs = [f.path for f in os.scandir(
-                input_directory) if f.is_dir()]
-        else:
-            raise ValueError(f"Directory not found: {input_directory}")
-    elif isinstance(input_directory, list):
-        subdirs = input_directory
-    else:
-        raise ValueError(
-            "input_directory must be a string (path) or list of paths")
-
-    print(f"Processing {len(subdirs)} directories")
 
     yaml_data = {
         "run": {
@@ -287,9 +304,9 @@ def large_dataset(input_directory, model_path='robot_model.keras'):
         labs_p = os.path.join(data_dir, "combined_labels.csv")
 
         if os.path.exists(feats_p) and os.path.exists(labs_p):
-            print(f"value already exist in {data_dir}")
+            print(f"Files already exist in {data_dir}")
 
-            # Load this dataset’s CSVs
+            # Load this dataset's CSVs
             df_feats = pd.read_csv(feats_p, header=0)
             df_labs = pd.read_csv(labs_p, header=0)
 
@@ -303,7 +320,7 @@ def large_dataset(input_directory, model_path='robot_model.keras'):
                 combined_features = pd.concat(
                     [combined_features, df_feats], axis=0, ignore_index=True)
                 combined_labels = pd.concat(
-                    [combined_labels,   df_labs],  axis=0, ignore_index=True)
+                    [combined_labels, df_labs], axis=0, ignore_index=True)
 
             total_rows += len(df_feats)
 
@@ -312,115 +329,165 @@ def large_dataset(input_directory, model_path='robot_model.keras'):
                 "name": os.path.basename(os.path.normpath(data_dir)),
                 "path": os.path.abspath(data_dir),
                 "features_csv": os.path.abspath(feats_p),
-                "labels_csv":   os.path.abspath(labs_p),
+                "labels_csv": os.path.abspath(labs_p),
                 "features_shape": {"rows": int(df_feats.shape[0]), "cols": int(df_feats.shape[1])},
-                "labels_shape":   {"rows": int(df_labs.shape[0]),  "cols": int(df_labs.shape[1])},
-                # optional things you may want:
-                # "feature_columns": list(df_feats.columns),
+                "labels_shape": {"rows": int(df_labs.shape[0]), "cols": int(df_labs.shape[1])},
             })
 
             print(
-                f"combined features {combined_features.shape} and labels {combined_labels.shape}")
+                f"Combined features {combined_features.shape} and labels {combined_labels.shape}")
+
         else:
             print(
-                f"combined features does not exists within {data_dir} will create")
-            # data dir will have seg_* which need to combined for combine_features
-            seg_dirs = [d for d in os.listdir(data_dir)
-                        if os.path.isdir(os.path.join(data_dir, d))]
+                f"Combined features do not exist within {data_dir}, will create")
 
-            print("Found subdirectories:", seg_dirs)
+            # Get seg_* directories
+            try:
+                seg_dirs = [d for d in os.listdir(data_dir)
+                            if os.path.isdir(os.path.join(data_dir, d))]
+                print("Found subdirectories:", seg_dirs)
 
-            # If you only care about seg_* dirs
-            seg_dirs = [d for d in seg_dirs if d.startswith("seg_")]
+                # Filter for seg_* directories only
+                seg_dirs = [d for d in seg_dirs if d.startswith("seg_")]
+                print("Filtered subdirectories:", seg_dirs)
 
-            print("Filtered subdirectories:", seg_dirs)
-            # just for this directory so combined_features can be created within directory
+                if not seg_dirs:
+                    print(
+                        f"No seg_* directories found in {data_dir}, skipping")
+                    continue
+
+            except OSError as e:
+                print(f"Error accessing directory {data_dir}: {e}")
+                continue
+
+            # Process seg_* directories
             local_features = None
             local_labels = None
-            for dir in seg_dirs:
 
-                training_lidar = pd.read_csv(
-                    f"{data_dir}/{dir}/input_data/lidar_data.csv", header=0)
-                training_odom = pd.read_csv(
-                    f"{data_dir}/{dir}/input_data/odom_data.csv", header=0)
-                training_local_goals = pd.read_csv(
-                    f"{data_dir}/{dir}/input_data/local_goals.csv", header=0)
-                training_labels = pd.read_csv(
-                    f"{data_dir}/{dir}/input_data/cmd_vel_output.csv", header=0)
+            for seg_dir in seg_dirs:
+                try:
+                    # Load data files
+                    training_lidar = pd.read_csv(
+                        f"{data_dir}/{seg_dir}/input_data/lidar_data.csv", header=0)
+                    training_odom = pd.read_csv(
+                        f"{data_dir}/{seg_dir}/input_data/odom_data.csv", header=0)
+                    training_local_goals = pd.read_csv(
+                        f"{data_dir}/{seg_dir}/input_data/local_goals.csv", header=0)
+                    training_labels = pd.read_csv(
+                        f"{data_dir}/{seg_dir}/input_data/cmd_vel_output.csv", header=0)
 
-                # Preprocess data
-                training_lidar = training_lidar.iloc[:-1, :]
-                training_odom = training_odom.iloc[:, [5, 6]]
-                training_local_goals = training_local_goals.iloc[:, [1, 2, 3]]
-                training_labels = training_labels.iloc[:, [2, 3]]
-                training_odom.columns = [
-                    f'odom_{col}' for col in training_odom.columns]
-                training_lidar.columns = [
-                    f'lidar_{i}' for i in range(training_lidar.shape[1])]
-                training_local_goals.columns = [
-                    f'goal_{col}' for col in training_local_goals.columns]
+                    # Preprocess data
+                    training_lidar = training_lidar.iloc[:-1, :]
+                    training_odom = training_odom.iloc[:, [5, 6]]
+                    training_local_goals = training_local_goals.iloc[:, [
+                        1, 2, 3]]
+                    training_labels = training_labels.iloc[:, [2, 3]]
 
-                # Combine features
-                features = pd.concat(
-                    [training_odom, training_local_goals, training_lidar], axis=1)
-                print(f"feautres shape of {data_dir} : {features.shape}")
-                print(f"labels shape of {data_dir} : {training_labels.shape}")
+                    # Rename columns
+                    training_odom.columns = [
+                        f'odom_{col}' for col in training_odom.columns]
+                    training_lidar.columns = [
+                        f'lidar_{i}' for i in range(training_lidar.shape[1])]
+                    training_local_goals.columns = [
+                        f'goal_{col}' for col in training_local_goals.columns]
 
-                # Add to combined dataframes
-                if local_features is None:
-                    local_features = features
-                    local_labels = training_labels
+                    # Check minimum size
+                    if training_lidar.shape[0] <= 200:
+                        print(
+                            f"{data_dir}/{seg_dir} is too small ({training_lidar.shape[0]} rows), skipping")
+                        continue
+
+                    # Combine features
+                    features = pd.concat(
+                        [training_odom, training_local_goals, training_lidar], axis=1)
+                    print(f"Features shape for {seg_dir}: {features.shape}")
+                    print(
+                        f"Labels shape for {seg_dir}: {training_labels.shape}")
+
+                    # Add to local combined dataframes
+                    if local_features is None:
+                        local_features = features
+                        local_labels = training_labels
+                    else:
+                        # Check dimensions match
+                        if features.shape[1] != local_features.shape[1]:
+                            print(
+                                f"Feature dimension mismatch in {seg_dir}: {features.shape[1]} vs {local_features.shape[1]}, skipping")
+                            continue
+
+                        local_features = pd.concat(
+                            [local_features, features], axis=0, ignore_index=True)
+                        local_labels = pd.concat(
+                            [local_labels, training_labels], axis=0, ignore_index=True)
+
+                except Exception as e:
+                    print(f"Error processing {seg_dir}: {e}")
+                    continue
+
+            # Save combined features for this directory and add to global dataset
+            if local_features is not None and local_labels is not None:
+                print(f"Creating combined features for {data_dir}")
+                print(
+                    f"Local dataset shape: features {local_features.shape}, labels {local_labels.shape}")
+
+                # Save the combined files
+                local_features.to_csv(
+                    f'{data_dir}/combined_features.csv', mode='w', header=True, index=False)
+                local_labels.to_csv(
+                    f'{data_dir}/combined_labels.csv', mode='w', header=True, index=False)
+
+                # Add to global combined dataset
+                if combined_features is None:
+                    combined_features = local_features
+                    combined_labels = local_labels
                 else:
-                    # Make sure columns align before concatenating
-                    assert features.shape[1] == local_features.shape[
-                        1], f"Feature dimension mismatch: {features.shape[1]} vs {local_features.shape[1]}"
-                    # Append rows
-                    local_features = pd.concat(
-                        [local_features, features], axis=0, ignore_index=True)
-                    local_labels = pd.concat(
-                        [local_labels, training_labels], axis=0, ignore_index=True)
-            print(f"creating combined features for {data_dir}")
-            features_df = pd.DataFrame(local_features)
-            features_df.to_csv(
-                f'{data_dir}/combined_features.csv', mode='w', header=True, index=False)
-            labels_df = pd.DataFrame(local_labels)
-            labels_df.to_csv(
-                f'{data_dir}/combined_labels.csv', mode='w', header=True, index=False)
+                    # Check dimensions match
+                    if local_features.shape[1] != combined_features.shape[1]:
+                        print(
+                            f"Feature dimension mismatch for {data_dir}: {local_features.shape[1]} vs {combined_features.shape[1]}")
+                        print("Skipping this directory")
+                        continue
 
-            if combined_features is None:
-                combined_features = local_features
-                combined_labels = local_labels
+                    combined_features = pd.concat(
+                        [combined_features, local_features], axis=0, ignore_index=True)
+                    combined_labels = pd.concat(
+                        [combined_labels, local_labels], axis=0, ignore_index=True)
 
+                total_rows += len(local_features)
+
+                # Record metadata for this dataset
+                yaml_data["datasets"].append({
+                    "name": os.path.basename(os.path.normpath(data_dir)),
+                    "path": os.path.abspath(data_dir),
+                    "features_csv": os.path.abspath(f'{data_dir}/combined_features.csv'),
+                    "labels_csv": os.path.abspath(f'{data_dir}/combined_labels.csv'),
+                    "features_shape": {"rows": int(local_features.shape[0]), "cols": int(local_features.shape[1])},
+                    "labels_shape": {"rows": int(local_labels.shape[0]), "cols": int(local_labels.shape[1])},
+                    "seg_directories_processed": len(seg_dirs),
+                })
             else:
-
-                assert df_feats.shape[1] == combined_features.shape[1], \
-                    f"Feature dimension mismatch: {df_feats.shape[1]} vs {combined_features.shape[1]}"
-                combined_features = pd.concat(
-                    [combined_features, df_feats], axis=0, ignore_index=True)
-                combined_labels = pd.concat(
-                    [combined_labels,   df_labs],  axis=0, ignore_index=True)
-
-            total_rows += len(df_feats)
-            yaml_data["datasets"].append({
-                "name": os.path.basename(os.path.normpath(data_dir)),
-                "path": os.path.abspath(data_dir),
-                "features_csv": os.path.abspath(feats_p),
-                "labels_csv":   os.path.abspath(labs_p),
-                "features_shape": {"rows": int(df_feats.shape[0]), "cols": int(df_feats.shape[1])},
-                "labels_shape":   {"rows": int(df_labs.shape[0]),  "cols": int(df_labs.shape[1])},
-                # optional things you may want:
-                # "feature_columns": list(df_feats.columns),
-            })
+                print(f"No valid data found in {data_dir}")
 
     # Fill combined summary
     if combined_features is not None:
         yaml_data["combined"] = {
             "features_shape": {"rows": int(combined_features.shape[0]), "cols": int(combined_features.shape[1])},
-            "labels_shape":   {"rows": int(combined_labels.shape[0]),  "cols": int(combined_labels.shape[1])},
+            "labels_shape": {"rows": int(combined_labels.shape[0]), "cols": int(combined_labels.shape[1])},
             "num_datasets": len(yaml_data["datasets"]),
             "total_rows": int(total_rows),
         }
 
+        print(
+            f"Final combined dataset: features {combined_features.shape}, labels {combined_labels.shape}")
+    else:
+        print("No valid data found across all directories")
+        return
+
+    # Write metadata YAML next to the run outputs
+    meta_path = os.path.join(new_dir, "metadata.yaml")
+    with open(meta_path, "w") as f:
+        yaml.safe_dump(yaml_data, f, sort_keys=False)
+    print("Wrote metadata:", meta_path)
     # Write metadata YAML next to the run outputs
     meta_path = os.path.join(new_dir, "metadata.yaml")
     with open(meta_path, "w") as f:
@@ -464,6 +531,8 @@ def large_dataset(input_directory, model_path='robot_model.keras'):
     model_path = f"{timestamp}.keras"
     # Save the model and scaler
     model.save(os.path.join(new_dir, model_path))
+    convert_keras_onnx(os.path.join(new_dir, model_path),
+                       os.path.join(new_dir, f"{timestamp}.onnx"))
     graphs(history, new_dir)
     # Optional: Save scaler for inference
 
@@ -482,12 +551,14 @@ def main():
                         help="add to big dataset")
     parser.add_argument("--train_combine", action="store_true",
                         help="train based on combined dkr")
+    parser.add_argument("--single_dkr", action='store_true',
+                        help="All training data within one directory")
     args = parser.parse_args()
 
     if args.train_combine:
         train_and_save_model_combined(args.input_bag, args.model)
     if args.large:
-        large_dataset(args.input_bag)
+        large_dataset(args.input_bag, args.single_dkr)
 
     if args.train:
         # Train and save the model
@@ -521,6 +592,22 @@ def graphs(history, filepath):
     plt.savefig(f"{filepath}/graphs.png")
     plt.tight_layout()
     plt.show()
+
+
+def convert_keras_onnx(keras_model, output_model_name):
+    filepath = keras_model
+    m = load_model(filepath)
+
+    flat_out = tf.nest.flatten(m.outputs)
+    m.output_names = [t.name.split(":")[0] for t in flat_out]
+
+    INPUT_DIM = m.input_shape[-1]
+    spec = (tf.TensorSpec([None, INPUT_DIM], tf.float32, name="input"),)
+
+    onnx_model, _ = tf2onnx.convert.from_keras(
+        m, input_signature=spec, opset=17, output_path=output_model_name
+    )
+    print(f"conveted {output_model_name}")
 
 
 def log_processing(input_directory, csv_file="proccessed_data.csv"):

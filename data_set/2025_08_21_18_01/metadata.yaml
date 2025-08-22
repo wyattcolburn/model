@@ -1,0 +1,113 @@
+run:
+  timestamp: '2025_08_21_18_01'
+  output_dir: data_set/2025_08_21_18_01
+datasets:
+- name: 2025-08-19_15-22-45_gaus
+  path: /home/mobrob/model/gaussian_random_walk_ds/2025-08-19_15-22-45_gaus
+  features_csv: /home/mobrob/model/gaussian_random_walk_ds/2025-08-19_15-22-45_gaus/combined_features.csv
+  labels_csv: /home/mobrob/model/gaussian_random_walk_ds/2025-08-19_15-22-45_gaus/combined_labels.csv
+  features_shape:
+    rows: 18757
+    cols: 1085
+  labels_shape:
+    rows: 18757
+    cols: 2
+- name: 2025-08-19_15-17-39_gaus
+  path: /home/mobrob/model/gaussian_random_walk_ds/2025-08-19_15-17-39_gaus
+  features_csv: /home/mobrob/model/gaussian_random_walk_ds/2025-08-19_15-17-39_gaus/combined_features.csv
+  labels_csv: /home/mobrob/model/gaussian_random_walk_ds/2025-08-19_15-17-39_gaus/combined_labels.csv
+  features_shape:
+    rows: 7921
+    cols: 1085
+  labels_shape:
+    rows: 7921
+    cols: 2
+- name: 2025-08-19_14-19-31_gaus
+  path: /home/mobrob/model/gaussian_random_walk_ds/2025-08-19_14-19-31_gaus
+  features_csv: /home/mobrob/model/gaussian_random_walk_ds/2025-08-19_14-19-31_gaus/combined_features.csv
+  labels_csv: /home/mobrob/model/gaussian_random_walk_ds/2025-08-19_14-19-31_gaus/combined_labels.csv
+  features_shape:
+    rows: 9046
+    cols: 1085
+  labels_shape:
+    rows: 9046
+    cols: 2
+- name: 2025-08-19_14-37-23_gaus
+  path: /home/mobrob/model/gaussian_random_walk_ds/2025-08-19_14-37-23_gaus
+  features_csv: /home/mobrob/model/gaussian_random_walk_ds/2025-08-19_14-37-23_gaus/combined_features.csv
+  labels_csv: /home/mobrob/model/gaussian_random_walk_ds/2025-08-19_14-37-23_gaus/combined_labels.csv
+  features_shape:
+    rows: 9340
+    cols: 1085
+  labels_shape:
+    rows: 9340
+    cols: 2
+- name: 2025-08-19_14-24-18_gaus
+  path: /home/mobrob/model/gaussian_random_walk_ds/2025-08-19_14-24-18_gaus
+  features_csv: /home/mobrob/model/gaussian_random_walk_ds/2025-08-19_14-24-18_gaus/combined_features.csv
+  labels_csv: /home/mobrob/model/gaussian_random_walk_ds/2025-08-19_14-24-18_gaus/combined_labels.csv
+  features_shape:
+    rows: 12350
+    cols: 1085
+  labels_shape:
+    rows: 12350
+    cols: 2
+- name: 2025-08-19_14-22-29_gaus
+  path: /home/mobrob/model/gaussian_random_walk_ds/2025-08-19_14-22-29_gaus
+  features_csv: /home/mobrob/model/gaussian_random_walk_ds/2025-08-19_14-22-29_gaus/combined_features.csv
+  labels_csv: /home/mobrob/model/gaussian_random_walk_ds/2025-08-19_14-22-29_gaus/combined_labels.csv
+  features_shape:
+    rows: 5116
+    cols: 1085
+  labels_shape:
+    rows: 5116
+    cols: 2
+- name: 2025-08-19_14-11-27_gaus
+  path: /home/mobrob/model/gaussian_random_walk_ds/2025-08-19_14-11-27_gaus
+  features_csv: /home/mobrob/model/gaussian_random_walk_ds/2025-08-19_14-11-27_gaus/combined_features.csv
+  labels_csv: /home/mobrob/model/gaussian_random_walk_ds/2025-08-19_14-11-27_gaus/combined_labels.csv
+  features_shape:
+    rows: 2583
+    cols: 1085
+  labels_shape:
+    rows: 2583
+    cols: 2
+- name: 2025-08-21_15-28-28_gaus
+  path: /home/mobrob/model/gaussian_random_walk_ds/2025-08-21_15-28-28_gaus
+  features_csv: /home/mobrob/model/gaussian_random_walk_ds/2025-08-21_15-28-28_gaus/combined_features.csv
+  labels_csv: /home/mobrob/model/gaussian_random_walk_ds/2025-08-21_15-28-28_gaus/combined_labels.csv
+  features_shape:
+    rows: 9202
+    cols: 1085
+  labels_shape:
+    rows: 9202
+    cols: 2
+- name: 2025-08-19_14-28-41_gaus
+  path: /home/mobrob/model/gaussian_random_walk_ds/2025-08-19_14-28-41_gaus
+  features_csv: /home/mobrob/model/gaussian_random_walk_ds/2025-08-19_14-28-41_gaus/combined_features.csv
+  labels_csv: /home/mobrob/model/gaussian_random_walk_ds/2025-08-19_14-28-41_gaus/combined_labels.csv
+  features_shape:
+    rows: 22086
+    cols: 1085
+  labels_shape:
+    rows: 22086
+    cols: 2
+- name: 2025-08-21_15-31-57_gaus
+  path: /home/mobrob/model/gaussian_random_walk_ds/2025-08-21_15-31-57_gaus
+  features_csv: /home/mobrob/model/gaussian_random_walk_ds/2025-08-21_15-31-57_gaus/combined_features.csv
+  labels_csv: /home/mobrob/model/gaussian_random_walk_ds/2025-08-21_15-31-57_gaus/combined_labels.csv
+  features_shape:
+    rows: 7514
+    cols: 1085
+  labels_shape:
+    rows: 7514
+    cols: 2
+combined:
+  features_shape:
+    rows: 103915
+    cols: 1085
+  labels_shape:
+    rows: 103915
+    cols: 2
+  num_datasets: 10
+  total_rows: 103915

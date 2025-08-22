@@ -1,0 +1,23 @@
+run:
+  timestamp: '2025_08_21_18_00'
+  output_dir: data_set/2025_08_21_18_00
+datasets:
+- name: 2025-08-19_14-37-23_gaus
+  path: /home/mobrob/model/gaussian_random_walk_ds/2025-08-19_14-37-23_gaus
+  features_csv: /home/mobrob/model/gaussian_random_walk_ds/2025-08-19_14-37-23_gaus/combined_features.csv
+  labels_csv: /home/mobrob/model/gaussian_random_walk_ds/2025-08-19_14-37-23_gaus/combined_labels.csv
+  features_shape:
+    rows: 9340
+    cols: 1085
+  labels_shape:
+    rows: 9340
+    cols: 2
+combined:
+  features_shape:
+    rows: 9340
+    cols: 1085
+  labels_shape:
+    rows: 9340
+    cols: 2
+  num_datasets: 1
+  total_rows: 9340
