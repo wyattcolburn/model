@@ -21,7 +21,7 @@ from sklearn.preprocessing import RobustScaler
 from sklearn.preprocessing import StandardScaler
 
 from datetime import datetime
-os.environ["CUDA_VISIBLE_DEVICES"] = "-1"  # force CPU for now
+# os.environ["CUDA_VISIBLE_DEVICES"] = "-1"  # force CPU for now
 
 """
 The idea is that you give the program you dataset (which contains the csv files)
@@ -235,7 +235,7 @@ def train_and_save_model(input_bag, model_path='robot_model.keras'):
     return scaler
 
 
-def large_dataset(input_directory, single_dkr_flag):
+def large_dataset(input_directory, single_dkr_flag, adaptive_flag):
     """
     Function to create large data sets
     Args:
@@ -371,16 +371,23 @@ def large_dataset(input_directory, single_dkr_flag):
                         f"{data_dir}/{seg_dir}/input_data/lidar_data.csv", header=0)
                     training_odom = pd.read_csv(
                         f"{data_dir}/{seg_dir}/input_data/odom_data.csv", header=0)
-                    training_local_goals = pd.read_csv(
-                        f"{data_dir}/{seg_dir}/input_data/local_goals.csv", header=0)
+                    if adaptive_flag:
+                        training_local_goals = pd.read_csv(f"{data_dir}/{seg_dir}/input_data/adaptive_local_goals.csv", header=0)
+                    else:
+                        training_local_goals = pd.read_csv(
+                            f"{data_dir}/{seg_dir}/input_data/local_goals.csv", header=0)
+                    
                     training_labels = pd.read_csv(
                         f"{data_dir}/{seg_dir}/input_data/cmd_vel_output.csv", header=0)
 
                     # Preprocess data
                     training_lidar = training_lidar.iloc[:-1, :]
                     training_odom = training_odom.iloc[:, [5, 6]]
-                    training_local_goals = training_local_goals.iloc[:, [
-                        1, 2, 3]]
+                    if adaptive_flag:
+                        training_local_goals = training_local_goals[:-1]
+                    else: 
+                        training_local_goals = training_local_goals.iloc[:, [
+                            1, 2, 3]]
                     training_labels = training_labels.iloc[:, [2, 3]]
 
                     # Rename columns
@@ -396,6 +403,7 @@ def large_dataset(input_directory, single_dkr_flag):
                         print(
                             f"{data_dir}/{seg_dir} is too small ({training_lidar.shape[0]} rows), skipping")
                         continue
+                    print(f"shape of odom {training_odom.shape} lidar {training_lidar.shape} local goals {training_local_goals.shape}")
 
                     # Combine features
                     features = pd.concat(
@@ -553,12 +561,14 @@ def main():
                         help="train based on combined dkr")
     parser.add_argument("--single_dkr", action='store_true',
                         help="All training data within one directory")
+    parser.add_argument("--adaptive", action='store_true',
+                        help="All training data within one directory")
     args = parser.parse_args()
 
     if args.train_combine:
         train_and_save_model_combined(args.input_bag, args.model)
     if args.large:
-        large_dataset(args.input_bag, args.single_dkr)
+        large_dataset(args.input_bag, args.single_dkr, args.adaptive)
 
     if args.train:
         # Train and save the model
