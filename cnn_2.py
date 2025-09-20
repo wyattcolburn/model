@@ -1,57 +1,94 @@
 
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-from sklearn.model_selection import GroupShuffleSplit
+
 import os
-import glob
 import argparse
 import yaml
 from datetime import datetime
-
+import random
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-from sklearn.model_selection import train_test_split
+# Reproducibility
+random.seed(42)
+np.random.seed(42)
 
 import tensorflow as tf
+tf.random.set_seed(42)
 from tensorflow import keras
 from tensorflow.keras import layers
-
+from sklearn.model_selection import GroupShuffleSplit
 import tf2onnx
 
 
 # =========================
 # Model + Utilities
 # =========================
+# with these two lines:
+from tensorflow.keras.utils import register_keras_serializable
 
-def create_cnn_model_with_norm(lidar_len: int, scalar_len: int,
-                               conv_channels=(32, 64, 128),
-                               dense_units=(128, 64), dropout=0.1):
+@register_keras_serializable(package="custom")
+class ScaleCmdOut(keras.layers.Layer):
+    """Scales tanh outputs to physical limits for (v, w)."""
+    def __init__(self, v_max=0.6, w_max=2.5, **kwargs):
+        super().__init__(**kwargs)
+        self.v_max = float(v_max)
+        self.w_max = float(w_max)
+
+    def call(self, inputs):
+        v = inputs[:, 0] * self.v_max
+        w = inputs[:, 1] * self.w_max
+        return tf.stack([v, w], axis=1)
+
+    def get_config(self):
+        cfg = super().get_config()
+        cfg.update({"v_max": self.v_max, "w_max": self.w_max})
+        return cfg
+
+
+def create_cnn_model_with_norm(
+    lidar_len: int,
+    scalar_len: int,
+    conv_channels=(32, 64, 128),
+    dense_units=(128, 64),
+    dropout=0.1,
+    limit_outputs=True,
+    v_max=0.6,
+    w_max=2.5,
+    kernel_l2=1e-5,          # mild regularization for generalization
+):
     """
     Two-input CNN with built-in Normalization layers.
     Inputs:
-      - lidar:   [B, lidar_len, 1]  (1D LiDAR beams)
-      - state:   [B, scalar_len]    (odom v,w + goal features, etc.)
+      - lidar:  [B, lidar_len, 1]  (1D LiDAR beams)
+      - state:  [B, scalar_len]    (odom v,w + goal features, etc.)
     Output:
-      - [v_hat, w_hat]
+      - [v_hat, w_hat] (optionally range-limited by tanh * [v_max, w_max])
     """
-    # Normalizers: statistics will be ADAPTED before training and baked into the graph.
-    norm_lidar  = layers.Normalization(axis=-1, name="norm_lidar")   # expects [B, lidar_len]
-    norm_scalar = layers.Normalization(axis=-1, name="norm_scalar")  # expects [B, scalar_len]
+    # Normalizers (adapted on training data)
+    norm_lidar  = layers.Normalization(axis=-1, name="norm_lidar")
+    norm_scalar = layers.Normalization(axis=-1, name="norm_scalar")
 
     # --- LiDAR branch ---
     lidar_in = keras.Input(shape=(lidar_len, 1), name="lidar")
     x = layers.Reshape((lidar_len,), name="lidar_flat")(lidar_in)
-    x = norm_lidar(x)                                  # z-score per beam
+    x = norm_lidar(x)
     x = layers.Reshape((lidar_len, 1), name="lidar_unflat")(x)
+
     for i, ch in enumerate(conv_channels):
-        x = layers.Conv1D(ch, kernel_size=5,
-                          strides=2 if i < len(conv_channels)-1 else 1,
-                          padding="same")(x)
+        stride = 2 if i < len(conv_channels) - 1 else 1
+        dilation = 1 if stride > 1 else 2  # never combine stride>1 with dilation>1
+        x = layers.Conv1D(
+            ch, kernel_size=5, strides=stride, padding="same",
+            dilation_rate=dilation,
+            kernel_regularizer=keras.regularizers.l2(kernel_l2)
+        )(x)
         x = layers.BatchNormalization()(x)
         x = layers.ReLU()(x)
-    x = layers.GlobalMaxPooling1D()(x)                 # [B, C]
+
+    x = layers.GlobalAveragePooling1D()(x)
 
     # --- Scalar branch ---
     scal_in = keras.Input(shape=(scalar_len,), name="state")
@@ -63,49 +100,63 @@ def create_cnn_model_with_norm(lidar_len: int, scalar_len: int,
         z = layers.Dense(u, activation="relu")(z)
         if dropout and dropout > 0:
             z = layers.Dropout(dropout)(z)
-    out = layers.Dense(2, name="cmd_out")(z)           # -> [v_hat, w_hat]
+
+    if limit_outputs:
+        raw = layers.Dense(2, activation="tanh", name="cmd_out_raw")(z)
+        out = ScaleCmdOut(v_max=v_max, w_max=w_max, name="cmd_out")(raw)
+    else:
+        out = layers.Dense(2, name="cmd_out")(z)
 
     model = keras.Model([lidar_in, scal_in], out, name="LidarCNNPolicyNorm")
 
-    lr = keras.optimizers.schedules.ExponentialDecay(1e-3, 10000, 0.9)
-    model.compile(optimizer=keras.optimizers.Adam(lr), loss=keras.losses.Huber(delta =.5), metrics=["mae"])
+    # Compile (Huber is robust to label outliers)
+    model.compile(
+        optimizer=keras.optimizers.Adam(1e-3),
+        loss=keras.losses.Huber(delta=0.5),
+        metrics=["mae"],
+        jit_compile=True,
+    )
     return model
 
 
-def split_lidar_scalar(features_df):
+def split_lidar_scalar(features_df: pd.DataFrame):
     """
-    Split columns into LiDAR vs. scalar using 'lidar' prefix.
+    Split columns into LiDAR vs. scalar using 'lidar_' prefix.
     Returns numpy arrays ready for the model:
       - X_lidar:  [N, L, 1]
       - X_scalar: [N, S]
     """
-    lidar_cols = [c for c in features_df.columns if c.startswith("lidar")]
-    scalar_cols = [c for c in features_df.columns if not c.startswith("lidar")]
+    lidar_cols = [c for c in features_df.columns if c.startswith("lidar_")]
+    scalar_cols = [c for c in features_df.columns if not c.startswith("lidar_")]
 
     X_lidar = features_df[lidar_cols].to_numpy(dtype=np.float32).reshape((-1, len(lidar_cols), 1))
     X_scalar = features_df[scalar_cols].to_numpy(dtype=np.float32)
     return X_lidar, X_scalar, lidar_cols, scalar_cols
 
 
-def convert_keras_onnx(keras_model_path, output_model_path, lidar_len: int, scalar_len: int):
+def convert_keras_onnx(keras_model_path_or_obj, output_model_path, lidar_len: int, scalar_len: int):
     """
     Export Keras model (with built-in Normalization) to ONNX with two inputs.
+    Accepts a path or a model instance.
     """
-    m = keras.models.load_model(keras_model_path)
+    if isinstance(keras_model_path_or_obj, str):
+        # Thanks to the registered custom layer, this works without custom_objects
+        m = keras.models.load_model(keras_model_path_or_obj)
+    else:
+        m = keras_model_path_or_obj
+
     sig = (
         tf.TensorSpec([None, lidar_len, 1], tf.float32, name="lidar"),
         tf.TensorSpec([None, scalar_len],   tf.float32, name="state"),
     )
-    _onnx_model, _ = tf2onnx.convert.from_keras(
+    tf2onnx.convert.from_keras(
         m, input_signature=sig, opset=17, output_path=output_model_path
     )
     print(f"[ONNX] Wrote: {output_model_path}")
 
 
 def graphs(history, out_dir):
-    """
-    Save training curves to out_dir/graphs.png
-    """
+    """Save training curves to out_dir/graphs.png"""
     os.makedirs(out_dir, exist_ok=True)
     plt.figure(figsize=(12, 4))
 
@@ -116,7 +167,7 @@ def graphs(history, out_dir):
         plt.plot(history.history['val_loss'], label='Validation loss')
     plt.title('Training and Validation Loss')
     plt.xlabel('Epochs')
-    plt.ylabel('MSE Loss')
+    plt.ylabel('Huber Loss')
     plt.legend()
 
     # MAE
@@ -190,6 +241,12 @@ def large_dataset(input_directory, single_dkr_flag, adaptive_flag):
             print(f"[{data_dir}] Using existing combined CSVs")
             df_feats = pd.read_csv(feats_p, header=0)
             df_labs  = pd.read_csv(labs_p,  header=0)
+
+            # Ensure a 'group' column exists even for older CSVs
+            if 'group' not in df_feats.columns:
+                inferred_gid = os.path.basename(data_dir)
+                df_feats['group'] = inferred_gid
+
         else:
             print(f"[{data_dir}] Building combined CSVs from seg_*")
             try:
@@ -208,7 +265,7 @@ def large_dataset(input_directory, single_dkr_flag, adaptive_flag):
 
             for seg in seg_dirs:
                 seg_path = os.path.join(data_dir, seg)
-                group_id = f"{os.path.basename(data_dir)}::{seg}" 
+                group_id = f"{os.path.basename(data_dir)}::{seg}"
                 try:
                     training_lidar = pd.read_csv(os.path.join(seg_path, "input_data/lidar_data.csv"), header=0)
                     training_odom  = pd.read_csv(os.path.join(seg_path, "input_data/odom_data.csv"),  header=0)
@@ -235,10 +292,11 @@ def large_dataset(input_directory, single_dkr_flag, adaptive_flag):
                     if training_lidar.shape[0] <= 200:
                         print(f"  {seg_path} too small ({training_lidar.shape[0]} rows), skipping")
                         continue
-                    feats = pd.concat([training_odom, training_local_goals, training_lidar], axis=1)
 
+                    feats = pd.concat([training_odom, training_local_goals, training_lidar], axis=1)
                     feats = feats.copy()
                     feats['group'] = group_id
+
                     if local_features is None:
                         local_features = feats
                         local_labels   = training_labels
@@ -257,7 +315,7 @@ def large_dataset(input_directory, single_dkr_flag, adaptive_flag):
                 print(f"  No valid data in {data_dir}, skipping")
                 continue
 
-            # Persist per-directory combined CSVs for reuse
+            # Persist per-directory combined CSVs for reuse (includes 'group')
             local_features.to_csv(feats_p, index=False)
             local_labels.to_csv(labs_p, index=False)
             df_feats, df_labs = local_features, local_labels
@@ -268,11 +326,18 @@ def large_dataset(input_directory, single_dkr_flag, adaptive_flag):
             combined_features = df_feats
             combined_labels   = df_labs
         else:
-            if df_feats.shape[1] != combined_features.shape[1]:
-                print(f"  Skipping {data_dir} due to feature dim mismatch: {df_feats.shape[1]} vs {combined_features.shape[1]}")
-                continue
+            # Align columns (in case some files initially lacked 'group')
+            missing_cols = set(combined_features.columns) - set(df_feats.columns)
+            for c in missing_cols:
+                df_feats[c] = np.nan
+            missing_cols_global = set(df_feats.columns) - set(combined_features.columns)
+            for c in missing_cols_global:
+                combined_features[c] = np.nan
+            df_feats = df_feats[combined_features.columns]
+
             combined_features = pd.concat([combined_features, df_feats], axis=0, ignore_index=True)
             combined_labels   = pd.concat([combined_labels,   df_labs], axis=0, ignore_index=True)
+
         total_rows += len(df_feats)
 
         yaml_data["datasets"].append({
@@ -288,6 +353,7 @@ def large_dataset(input_directory, single_dkr_flag, adaptive_flag):
         print("No valid data found across all directories.")
         return
 
+    # Combined meta
     yaml_data["combined"] = {
         "features_shape": {"rows": int(combined_features.shape[0]), "cols": int(combined_features.shape[1])},
         "labels_shape":   {"rows": int(combined_labels.shape[0]),   "cols": int(combined_labels.shape[1])},
@@ -302,19 +368,24 @@ def large_dataset(input_directory, single_dkr_flag, adaptive_flag):
     print(f"[Meta] Wrote: {meta_path}")
 
     # =========================
-    # Train / Validate Split
+    # Train / Validate Split (group-aware)
     # =========================
+    if 'group' not in combined_features.columns:
+        raise RuntimeError("Expected 'group' column in combined_features before splitting.")
+
     groups = combined_features['group']
     gss = GroupShuffleSplit(test_size=0.2, n_splits=1, random_state=42)
     train_idx, val_idx = next(gss.split(combined_features, groups=groups))
+
+    # Sanity: no group overlap
+    tr_groups = set(groups.iloc[train_idx])
+    va_groups = set(groups.iloc[val_idx])
+    print(f"[Groups] train={len(tr_groups)} val={len(va_groups)} disjoint={tr_groups.isdisjoint(va_groups)}")
 
     X_train = combined_features.iloc[train_idx].drop(columns=['group'])
     X_val   = combined_features.iloc[val_idx].drop(columns=['group'])
     y_train = combined_labels.iloc[train_idx]
     y_val   = combined_labels.iloc[val_idx]
-    # X_train, X_val, y_train, y_val = train_test_split(
-    #     combined_features, combined_labels, test_size=0.2, random_state=42
-    # )
 
     # Split into LiDAR vs scalar (NO external scaling)
     Xtr_lidar, Xtr_scalar, lidar_cols, scalar_cols = split_lidar_scalar(X_train)
@@ -328,34 +399,41 @@ def large_dataset(input_directory, single_dkr_flag, adaptive_flag):
     # =========================
     # Build, Adapt, Train
     # =========================
-    epochsVal = 500
-    early_stopping = keras.callbacks.EarlyStopping(
-        monitor='val_loss', mode='min', patience=5, min_delta=0.001, restore_best_weights=True
-    )
-
     model = create_cnn_model_with_norm(lidar_len=L, scalar_len=S)
 
-    # IMPORTANT: adapt normalization layers on RAW training data
-    norm_lidar  = model.get_layer("norm_lidar")
-    norm_scalar = model.get_layer("norm_scalar")
-    norm_lidar.adapt(Xtr_lidar.reshape(-1, L))  # [N, L]
-    norm_scalar.adapt(Xtr_scalar)               # [N, S]
+    # Adapt normalization layers on RAW training data
+    model.get_layer("norm_lidar").adapt(Xtr_lidar.reshape(-1, L))
+    model.get_layer("norm_scalar").adapt(Xtr_scalar)
+
+    # Callbacks
+    early_stopping = keras.callbacks.EarlyStopping(
+        monitor='val_loss', mode='min', patience=12, min_delta=1e-4, restore_best_weights=True
+    )
+    reduce_lr = keras.callbacks.ReduceLROnPlateau(
+        monitor='val_loss', factor=0.5, patience=5, min_lr=1e-6
+    )
+    best_path = os.path.join(new_dir, "best.keras")
+    ckpt = keras.callbacks.ModelCheckpoint(
+        best_path, monitor='val_loss', save_best_only=True
+    )
 
     history = model.fit(
         [Xtr_lidar, Xtr_scalar], y_train.values,
         validation_data=([Xva_lidar, Xva_scalar], y_val.values),
-        epochs=epochsVal, batch_size=256, callbacks=[], verbose=1
+        epochs=500, batch_size=256, callbacks=[early_stopping, reduce_lr, ckpt], verbose=1
     )
 
     # =========================
     # Save Keras + ONNX + Graphs
     # =========================
-    model_path = os.path.join(new_dir, f"{timestamp}.keras")
-    model.save(model_path)
-    print(f"[Keras] Wrote: {model_path}")
+    final_path = os.path.join(new_dir, f"{timestamp}.keras")
+    model.save(final_path)
+    print(f"[Keras] Wrote final: {final_path}")
 
+    # Prefer exporting ONNX from the best checkpoint (val_loss-min); fall back to final
+    export_from = best_path if os.path.exists(best_path) else final_path
     onnx_path = os.path.join(new_dir, f"{timestamp}.onnx")
-    convert_keras_onnx(model_path, onnx_path, L, S)
+    convert_keras_onnx(export_from, onnx_path, L, S)
 
     graphs(history, new_dir)
 
