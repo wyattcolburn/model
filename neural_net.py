@@ -516,7 +516,7 @@ def large_dataset(input_directory, single_dkr_flag, adaptive_flag):
         new_dir, f"{timestamp}_scaler_maxs.txt"),  scaler.data_max_)
 
     print(f" combined features shape {combined_features.shape}")
-    epochsVal = 500
+    epochsVal = 150
     # early stopping
     # learning rate schedule
 
