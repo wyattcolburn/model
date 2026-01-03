@@ -7,12 +7,12 @@ Central training pipeline that consolidates raw CSV data from multiple bag segme
 
 ### Key Capabilities
 
-- ✅ **Multi-segment aggregation** - Combines data from multiple `seg_*/` directories
-- ✅ **Multi-dataset fusion** - Merges data from different collection runs
-- ✅ **Automatic preprocessing** - Handles feature extraction, scaling, and train/val splitting
-- ✅ **ONNX export** - Converts trained models for C++ runtime inference
-- ✅ **Metadata tracking** - Records dataset provenance and training parameters
-- ✅ **Adaptive local goals** - Supports both fixed-spacing and curvature-aware local goals
+-  **Multi-segment aggregation** - Combines data from multiple `seg_*/` directories
+-  **Multi-dataset fusion** - Merges data from different collection runs
+-  **Automatic preprocessing** - Handles feature extraction, scaling, and train/val splitting
+-  **ONNX export** - Converts trained models for C++ runtime inference
+-  **Metadata tracking** - Records dataset provenance and training parameters
+-  **Adaptive local goals** - Supports both fixed-spacing and curvature-aware local goals
 
 ---
 
